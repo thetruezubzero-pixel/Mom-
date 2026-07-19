@@ -533,7 +533,10 @@ function greatCircleDistanceKm(a, b) {
   return EARTH_RADIUS_KM * c;
 }
 
-const MAX_ROUTE_DISTANCE_KM = 15000; // practical long-haul normalization cap for pacing
+// Normalization cap: ~15,000 km is in the upper band of common long-haul city
+// pairs (well below the absolute antipodal max), giving useful pacing spread
+// without letting a few ultra-long routes dominate the whole speed scale.
+const MAX_ROUTE_DISTANCE_KM = 15000;
 
 function routeCycleSeconds(category, distanceKm) {
   const distT = THREE.MathUtils.clamp(distanceKm / MAX_ROUTE_DISTANCE_KM, 0, 1);
@@ -878,6 +881,8 @@ function applyEarthOpsFilters() {
     const layerOn = earthOpsLayers[r.category];
     const classOn = earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag;
     const visible = layerOn && classOn;
+    // Keep route paths and moving markers aligned to the same active filter so
+    // the panel class filter behaves consistently in the full Earth Ops view.
     r.marker.visible = visible;
     r.line.visible = visible;
   }
