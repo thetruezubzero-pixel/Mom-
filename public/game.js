@@ -686,7 +686,11 @@ for (const [a, b, cls] of SHIPPING_LANES) {
 for (const [a, b, cls] of LOGISTICS_CORRIDORS) {
   const cityLatLon = (name) => {
     const c = EARTH_CITIES.find((x) => x[0] === name);
-    return c ? [c[1], c[2]] : null;
+    if (!c) return null;
+    const lat = Number(c[1]);
+    const lon = Number(c[2]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return [lat, lon];
   };
   const start = cityLatLon(a);
   const end = cityLatLon(b);
@@ -853,8 +857,9 @@ function renderEarthOpsMetrics() {
   const classMatchedRoutes = earthOpsRoutes.filter((r) => earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag);
   const visibleRoutes = classMatchedRoutes.filter((r) => earthOpsLayers[r.category]).length;
   const liveFeeds = Object.values(dataSources).filter((s) => s.status === 'live').length;
-  const avgRouteKm = classMatchedRoutes.length
-    ? Math.round(classMatchedRoutes.reduce((sum, r) => sum + r.distanceKm, 0) / classMatchedRoutes.length)
+  const validDistanceRoutes = classMatchedRoutes.filter((r) => Number.isFinite(r.distanceKm) && r.distanceKm >= 0);
+  const avgRouteKm = validDistanceRoutes.length
+    ? Math.round(validDistanceRoutes.reduce((sum, r) => sum + r.distanceKm, 0) / validDistanceRoutes.length)
     : 0;
   const visibleSatellites = earthOpsLayers.sat ? earthOpsSatellites.length : 0;
   const liveSatellites = earthOpsLayers.sat ? earthOpsSatellites.filter((s) => s.live).length : 0;
