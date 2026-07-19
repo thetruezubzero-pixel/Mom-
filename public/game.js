@@ -527,13 +527,16 @@ function greatCircleDistanceKm(a, b) {
   const dLon = toRad(lon2 - lon1);
   const p1 = toRad(lat1);
   const p2 = toRad(lat2);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dLon / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(1 - h, 0)));
+  const hRaw = Math.sin(dLat / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dLon / 2) ** 2;
+  const h = THREE.MathUtils.clamp(hRaw, 0, 1);
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   return EARTH_RADIUS_KM * c;
 }
 
+const MAX_ROUTE_DISTANCE_KM = 15000; // practical long-haul normalization cap for pacing
+
 function routeCycleSeconds(category, distanceKm) {
-  const distT = THREE.MathUtils.clamp(distanceKm / 15000, 0, 1);
+  const distT = THREE.MathUtils.clamp(distanceKm / MAX_ROUTE_DISTANCE_KM, 0, 1);
   if (category === 'air') return THREE.MathUtils.lerp(18, 46, distT);
   if (category === 'sea') return THREE.MathUtils.lerp(42, 110, distT);
   return THREE.MathUtils.lerp(26, 70, distT); // land
@@ -542,7 +545,7 @@ function routeCycleSeconds(category, distanceKm) {
 function routeSpeedForCategory(category, a, b) {
   const distanceKm = greatCircleDistanceKm(a, b);
   const cycleSeconds = routeCycleSeconds(category, distanceKm);
-  return { speed: 1 / Math.max(1, cycleSeconds), distanceKm };
+  return { speed: 1 / cycleSeconds, distanceKm };
 }
 
 function latLonToVec3(lat, lon, radius) {
