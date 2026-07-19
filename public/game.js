@@ -1280,6 +1280,7 @@ const READINESS_META = {
   static: { label: 'STATIC', className: 'static' },
 };
 let lastEarthScaleMarkup = '';
+const warnedEarthScaleSources = new Set();
 
 const overlay = document.getElementById('overlay');
 const flashEl = document.getElementById('flash');
@@ -1299,13 +1300,24 @@ function getEarthSurfaceDistanceKm() {
 }
 
 function activeEarthScaleLayer(surfaceKm = getEarthSurfaceDistanceKm()) {
+  if (surfaceKm >= EARTH_SCALE_MAX_KM) return EARTH_SCALE_LAYERS[0];
   return EARTH_SCALE_LAYERS.find((layer) => surfaceKm >= layer.minKm && surfaceKm < layer.maxKm)
     || EARTH_SCALE_LAYERS[EARTH_SCALE_LAYERS.length - 1];
 }
 
 function layerReadinessBadge(sourceKeys) {
   if (!sourceKeys.length) return 'static';
-  const statuses = sourceKeys.map((key) => dataSources[key]?.status).filter((status) => status !== undefined);
+  const statuses = sourceKeys.map((key) => {
+    const source = dataSources[key];
+    if (!source) {
+      if (!warnedEarthScaleSources.has(key)) {
+        warnedEarthScaleSources.add(key);
+        console.warn(`Earth scale layer references unknown data source "${key}"`);
+      }
+      return 'simulated';
+    }
+    return source.status;
+  }).filter((status) => status !== undefined);
   if (statuses.includes('live')) return 'live';
   if (statuses.includes('stale')) return 'stale';
   if (statuses.includes('connecting')) return 'connecting';
@@ -1332,8 +1344,9 @@ function setEarthLock(active, { warpToEarth = false, silent = false } = {}) {
     if (warpToEarth) travelTo('Earth', { suppressFlash: true, preserveEarthLock: true });
     const earthPos = getEarthWorldPosition();
     const currentOffset = camera.position.clone().sub(earthPos);
+    const currentDistance = currentOffset.length();
     earthLockState.distance = THREE.MathUtils.clamp(
-      currentOffset.length() || earth.gameRadius * 3.5,
+      currentDistance > 0 ? currentDistance : earth.gameRadius * 3.5,
       earthLockState.minDistance,
       earthLockState.maxDistance,
     );
