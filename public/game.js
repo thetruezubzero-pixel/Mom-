@@ -1256,12 +1256,17 @@ motionToggle.addEventListener('click', () => {
 // Free-roam state — no objectives, no timer, no fail state.
 // ---------------------------------------------------------------------------
 let roaming = false;
+// Mirrors the existing quick-travel standoff so lock-on starts at a readable,
+// whole-Earth framing instead of clipping into the surface on mobile.
+const DEFAULT_EARTH_LOCK_DISTANCE_MULTIPLIER = 3.5;
 const earthLockState = {
   active: false,
-  distance: earth.gameRadius * 3.5,
+  distance: earth.gameRadius * DEFAULT_EARTH_LOCK_DISTANCE_MULTIPLIER,
   minDistance: earth.gameRadius * 1.35,
   maxDistance: earth.gameRadius * 18,
 };
+// High finite cap keeps the top zoom tier effectively "open ended" without
+// relying on Infinity in range math or future telemetry calculations.
 const EARTH_SCALE_MAX_KM = 1e12;
 const EARTH_SCALE_LAYERS = [
   { key: 'solar', label: 'Solar / galactic context', hudLabel: 'SOLAR', minKm: 300000, maxKm: EARTH_SCALE_MAX_KM, sourceKeys: [] },
@@ -1325,6 +1330,12 @@ function layerReadinessBadge(sourceKeys) {
   return 'simulated';
 }
 
+function getLayerSourceDescription(layer) {
+  return layer.sourceKeys.length
+    ? `depends on ${layer.sourceKeys.map((key) => dataSources[key]?.label || key).join(' + ')}`
+    : 'uses the static starfield + planetary simulation';
+}
+
 function syncEarthLockButton() {
   if (!earthLockToggle) return;
   earthLockToggle.textContent = earthLockState.active ? 'UNLOCK EARTH' : 'LOCK EARTH';
@@ -1346,7 +1357,7 @@ function setEarthLock(active, { warpToEarth = false, silent = false } = {}) {
     const currentOffset = camera.position.clone().sub(earthPos);
     const currentDistance = currentOffset.length();
     earthLockState.distance = THREE.MathUtils.clamp(
-      currentDistance > 0 ? currentDistance : earth.gameRadius * 3.5,
+      currentDistance > 0 ? currentDistance : earth.gameRadius * DEFAULT_EARTH_LOCK_DISTANCE_MULTIPLIER,
       earthLockState.minDistance,
       earthLockState.maxDistance,
     );
@@ -1371,9 +1382,7 @@ function renderEarthScaleStatus() {
     const active = layer.key === activeLayer.key;
     const readiness = layerReadinessBadge(layer.sourceKeys);
     const readinessMeta = READINESS_META[readiness] || READINESS_META.simulated;
-    const detail = layer.sourceKeys.length
-      ? `depends on ${layer.sourceKeys.map((key) => dataSources[key]?.label || key).join(' + ')}`
-      : 'uses the static starfield + planetary simulation';
+    const detail = getLayerSourceDescription(layer);
     return `
       <div class="row ${active ? 'active-layer' : ''}">
         <span>${layer.label}<small class="source-detail">${detail}</small></span>
