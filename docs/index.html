@@ -83,7 +83,7 @@ body {
   border-color: var(--line);
   cursor: pointer;
 }
-.chip-btn:active { background: var(--signal); color: #05201c; }
+.chip-btn:active, .chip-btn.active { background: var(--signal); color: #05201c; }
 
 .hud-left, .hud-right {
   position: absolute;
@@ -371,10 +371,28 @@ body {
 #dataSourceStatus .row {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 8px;
   padding: 3px 0;
   color: var(--ink-dim);
 }
+#dataSourceStatus .row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.source-detail {
+  font-size: 10px;
+  color: rgba(127,163,156,0.85);
+}
+#earthOpsMetrics .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--ink-dim);
+}
+#earthOpsMetrics .row b { color: var(--ink); }
 .badge {
   font-size: 9px;
   letter-spacing: 0.04em;
@@ -383,6 +401,7 @@ body {
   white-space: nowrap;
 }
 .badge-live { background: rgba(95,214,200,0.2); color: var(--signal); }
+.badge-stale { background: rgba(224,176,74,0.2); color: #e0b04a; }
 .badge-simulated { background: rgba(255,255,255,0.1); color: var(--ink-dim); }
 .badge-needs-key { background: rgba(224,176,74,0.18); color: #e0b04a; }
 .badge-connecting { background: rgba(255,255,255,0.08); color: var(--ink-dim); }
@@ -428,6 +447,7 @@ body {
           <span class="label">UTC</span>
           <span class="mono" id="clock">--:--:--</span>
         </div>
+        <button id="earthLockToggle" class="hud-box chip-btn">LOCK EARTH</button>
         <button id="earthOpsToggle" class="hud-box chip-btn">EARTH OPS</button>
       </div>
 
@@ -450,6 +470,7 @@ body {
         <div class="row"><span>MOONS</span><b class="mono" id="tMoons">--</b></div>
         <div class="row"><span>ORBIT PERIOD</span><b class="mono" id="tPeriod">--</b></div>
         <div class="row"><span>RANGE</span><b class="mono" id="tRange">--</b></div>
+        <div class="row"><span>LOCK</span><b class="mono" id="tLock">OFF</b></div>
       </div>
 
       <div class="hud-bottom hud-box">
@@ -477,7 +498,7 @@ body {
       <div class="panel-modal-inner">
         <button id="closeEarthOps" class="modal-close">&times;</button>
         <div class="panel-title">EARTH OPS &mdash; LOGISTICS TWIN</div>
-        <p class="note">Real geography (cities, airports, ports) and real satellite-altitude orbital mechanics. Traffic along these corridors is simulated unless a source below reads LIVE &mdash; see status list.</p>
+        <p class="note">Real geography (cities, airports, ports) and real satellite-altitude orbital mechanics. Route pacing uses category/class weighting, and live feeds move through CONNECTING/LIVE/STALE/SIMULATED states with automatic fallback.</p>
 
         <div class="panel-title">LAYERS</div>
         <label class="layer-row"><input type="checkbox" data-layer="air" checked /> Air traffic (passenger routes)</label>
@@ -495,6 +516,9 @@ body {
           <option value="food">Food / agriculture</option>
           <option value="industrial">Industrial</option>
         </select>
+
+        <div class="panel-title">MODEL SNAPSHOT</div>
+        <div id="earthOpsMetrics"></div>
 
         <div class="panel-title">DATA SOURCES</div>
         <div id="dataSourceStatus"></div>
@@ -523,7 +547,7 @@ body {
       <p class="lede">Free-roam a physically-scaled model of the solar system, no objectives or timer &mdash; just fly. Real elliptical orbits (Kepler's laws), real axial tilts, real major moons, and a backdrop of the actual brightest stars at their real positions &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Use Quick Travel to jump straight to any planet, and open EARTH OPS near Earth for a real-geography air/sea/land/satellite logistics overlay.</p>
       <div class="controls-grid">
         <div><b>Desktop</b><br/>Mouse look (click to lock) &middot; W/S thrust &middot; A/D strafe &middot; Shift boost &middot; Space brake</div>
-        <div><b>Touch</b><br/>Drag right side to look &middot; hold THRUST &middot; hold BOOST</div>
+        <div><b>Touch</b><br/>Drag right side to look &middot; hold THRUST &middot; hold BOOST &middot; tap LOCK EARTH to orbit without drift</div>
         <div><b>Motion</b><br/>Tilt your device to look around, like a handheld VR view &middot; works in portrait or landscape</div>
       </div>
       <button id="start" class="primary">Enter Free Roam</button>
@@ -1052,13 +1076,87 @@ scene.add(asteroidMesh);
 // feed. Two adapters (ISS position, live flight states) hit free, no-key
 // public APIs and fall back to simulation if the request fails; the rest
 // are clearly marked NEEDS KEY and simulate until one is supplied.
+//
+// Data-flow map (Earth Ops):
+// 1) Route definitions (air/sea/land + class tags) -> weighted speed/visibility
+//    profiles -> route entities in earthOpsRoutes.
+// 2) UI filters (layer toggles + class selector) -> applyEarthOpsFilters() ->
+//    route and satellite visibility + metrics recompute.
+// 3) Live adapters (ISS + flights) -> poll handlers -> source status state
+//    machine (connecting/live/stale/simulated/needs_key).
+// 4) Frame loop -> weighted route animation + source-driven pacing/opacity ->
+//    final render.
 // ---------------------------------------------------------------------------
 const earth = bodies.find((b) => b.name === 'Earth');
 const EARTH_RADIUS_KM = 6371;
 const EARTH_MU = 398600; // km^3/s^2, real Earth gravitational parameter
+const toRad = (degrees) => THREE.MathUtils.degToRad(degrees);
 
 function kmToGameUnits(km) {
   return (km * earth.gameRadius) / EARTH_RADIUS_KM;
+}
+
+function greatCircleDistanceKm(a, b) {
+  const [lat1, lon1] = a;
+  const [lat2, lon2] = b;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const lat1Rad = toRad(lat1);
+  const lat2Rad = toRad(lat2);
+  const haversineA = Math.sin(dLat / 2) ** 2 + Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) ** 2;
+  const h = THREE.MathUtils.clamp(haversineA, 0, 1);
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return EARTH_RADIUS_KM * c;
+}
+
+// Normalization cap: ~15,000 km is in the upper band of common long-haul city
+// pairs (well below the absolute antipodal max), giving useful pacing spread
+// without letting a few ultra-long routes dominate the whole speed scale.
+const MAX_ROUTE_DISTANCE_KM = 15000;
+
+// Per-category/class pacing calibration — pure animation tuning (how long a
+// marker takes to cross a route of a given real distance), not a claim about
+// real-world shipment timing. baseOpacity/markerScale are fixed cosmetic
+// values per category so the three route types stay visually distinct.
+const ROUTE_CATEGORY_WEIGHT = {
+  air: { pace: 0.95, baseOpacity: 0.5, markerScale: 1.12 },
+  sea: { pace: 1.35, baseOpacity: 0.4, markerScale: 0.92 },
+  land: { pace: 1.12, baseOpacity: 0.44, markerScale: 1.0 },
+};
+const ROUTE_CLASS_PACE = {
+  passenger: 0.92, consumer: 1.0, energy: 1.18, food: 1.06, industrial: 1.12,
+};
+
+const ROUTE_CYCLE_RANGE_SECONDS = {
+  air: [18, 46], // commercial flight corridors
+  sea: [42, 110], // maritime freight lanes
+  land: [26, 70], // regional freight corridors
+};
+const ROUTE_MARKER_BASE_RADIUS = 0.18;
+const SOURCE_AGE_SECOND_CUTOFF = 120;
+// If a source has been "connecting" for >1.6 polling windows, treat it as
+// effectively unavailable and switch to simulation until a live fix returns
+// (roughly one missed poll plus 60% of the next window).
+const CONNECTION_TIMEOUT_MULTIPLIER = 1.6;
+
+function routeCycleSeconds(category, classTag, distanceKm) {
+  const distT = THREE.MathUtils.clamp(distanceKm / MAX_ROUTE_DISTANCE_KM, 0, 1);
+  const categoryProfile = ROUTE_CATEGORY_WEIGHT[category] || ROUTE_CATEGORY_WEIGHT.land;
+  const classPace = ROUTE_CLASS_PACE[classTag] ?? ROUTE_CLASS_PACE.consumer;
+  const [minS, maxS] = ROUTE_CYCLE_RANGE_SECONDS[category] || ROUTE_CYCLE_RANGE_SECONDS.land;
+  return THREE.MathUtils.lerp(minS, maxS, distT) * categoryProfile.pace * classPace;
+}
+
+function routeSpeedForCategory(category, classTag, a, b) {
+  const distanceKm = greatCircleDistanceKm(a, b);
+  const cycleSeconds = routeCycleSeconds(category, classTag, distanceKm);
+  const categoryProfile = ROUTE_CATEGORY_WEIGHT[category] || ROUTE_CATEGORY_WEIGHT.land;
+  return {
+    speed: 1 / cycleSeconds,
+    distanceKm,
+    baseOpacity: categoryProfile.baseOpacity,
+    markerScale: categoryProfile.markerScale,
+  };
 }
 
 function latLonToVec3(lat, lon, radius) {
@@ -1069,6 +1167,15 @@ function latLonToVec3(lat, lon, radius) {
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta),
   );
+}
+
+function validateCoordinates(lat, lon) {
+  const safeLat = Number(lat);
+  const safeLon = Number(lon);
+  if (!Number.isFinite(safeLat) || !Number.isFinite(safeLon)) return null;
+  if (safeLat < -90 || safeLat > 90) return null;
+  if (safeLon < -180 || safeLon > 180) return null;
+  return [safeLat, safeLon];
 }
 
 function greatCircleArc(a, b, altPeak, segments = 40) {
@@ -1165,15 +1272,19 @@ const SATELLITE_SHELLS = [
 
 const earthOpsLayers = { air: true, sea: true, land: true, sat: true, iot: true };
 let earthOpsClassFilter = 'all';
-const earthOpsRoutes = []; // { category, classTag, points, marker, progress, speed }
+const earthOpsRoutes = []; // { category, classTag, points, marker, line, progress, speed, distanceKm }
 const earthOpsSatellites = []; // { name, marker, ring, angle, angularSpeed, live }
 
-function addRoute(category, classTag, points, color, speed, group) {
+function addRoute(category, classTag, points, color, speed, group, distanceKm = 0, baseOpacity = 0.45, markerScale = 1) {
   const geo = new THREE.BufferGeometry().setFromPoints(points);
-  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.45 }));
-  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color }));
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: baseOpacity }));
+  // 0.18 base radius keeps markers readable near Earth without obscuring route paths.
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(ROUTE_MARKER_BASE_RADIUS * markerScale, 8, 6),
+    new THREE.MeshBasicMaterial({ color }),
+  );
   group.add(line, marker);
-  earthOpsRoutes.push({ category, classTag, points, marker, line, progress: Math.random(), speed });
+  earthOpsRoutes.push({ category, classTag, points, marker, line, progress: Math.random(), speed, distanceKm });
 }
 
 // Surface layers rotate with Earth's spin (real geography is fixed to the
@@ -1185,17 +1296,36 @@ const satelliteGroup = new THREE.Group();
 earth.pivot.add(satelliteGroup);
 
 for (const [a, b, cls] of FLIGHT_ROUTES) {
-  addRoute('air', cls, greatCircleArc(EARTH_AIRPORTS[a], EARTH_AIRPORTS[b], 0.06), 0xbfd4ff, 0.05, surfaceGroup);
+  const start = EARTH_AIRPORTS[a];
+  const end = EARTH_AIRPORTS[b];
+  const { speed, distanceKm, baseOpacity, markerScale } = routeSpeedForCategory('air', cls, start, end);
+  addRoute('air', cls, greatCircleArc(start, end, 0.06), 0xbfd4ff, speed, surfaceGroup, distanceKm, baseOpacity, markerScale);
 }
 for (const [a, b, cls] of SHIPPING_LANES) {
-  addRoute('sea', cls, greatCircleArc(EARTH_PORTS[a], EARTH_PORTS[b], 0.006), 0x5fb0d6, 0.012, surfaceGroup);
+  const start = EARTH_PORTS[a];
+  const end = EARTH_PORTS[b];
+  const { speed, distanceKm, baseOpacity, markerScale } = routeSpeedForCategory('sea', cls, start, end);
+  addRoute('sea', cls, greatCircleArc(start, end, 0.006), 0x5fb0d6, speed, surfaceGroup, distanceKm, baseOpacity, markerScale);
 }
 for (const [a, b, cls] of LOGISTICS_CORRIDORS) {
   const cityLatLon = (name) => {
     const c = EARTH_CITIES.find((x) => x[0] === name);
-    return [c[1], c[2]];
+    if (!c) {
+      console.warn(`Earth Ops: missing city coordinates for "${name}"`);
+      return null;
+    }
+    const coords = validateCoordinates(c[1], c[2]);
+    if (!coords) {
+      console.warn(`Earth Ops: invalid city coordinates for "${name}"`);
+      return null;
+    }
+    return coords;
   };
-  addRoute('land', cls, greatCircleArc(cityLatLon(a), cityLatLon(b), 0.01), 0xe0b04a, 0.02, surfaceGroup);
+  const start = cityLatLon(a);
+  const end = cityLatLon(b);
+  if (!start || !end) continue;
+  const { speed, distanceKm, baseOpacity, markerScale } = routeSpeedForCategory('land', cls, start, end);
+  addRoute('land', cls, greatCircleArc(start, end, 0.01), 0xe0b04a, speed, surfaceGroup, distanceKm, baseOpacity, markerScale);
 }
 
 // City/airport/port reference markers — small static points, real coordinates.
@@ -1284,7 +1414,7 @@ async function fetchWithTimeout(url, ms = 6000) {
 
 const dataSources = {
   iss: {
-    label: 'ISS position', needsKey: false, status: 'connecting',
+    label: 'ISS position', needsKey: false, status: 'connecting', pollMs: 20000, staleMs: 60000,
     async fetchLive() {
       const res = await fetchWithTimeout('https://api.wheretheiss.at/v1/satellites/25544');
       if (!res.ok) throw new Error('bad response');
@@ -1293,7 +1423,7 @@ const dataSources = {
     },
   },
   flights: {
-    label: 'Live flight traffic (OpenSky Network)', needsKey: false, status: 'connecting',
+    label: 'Live flight traffic (OpenSky Network)', needsKey: false, status: 'connecting', pollMs: 30000, staleMs: 90000,
     async fetchLive() {
       const res = await fetchWithTimeout('https://opensky-network.org/api/states/all');
       if (!res.ok) throw new Error('bad response');
@@ -1301,36 +1431,107 @@ const dataSources = {
       return d.states || [];
     },
   },
-  maritime: { label: 'Maritime AIS (MarineTraffic / AISHub)', needsKey: true, status: 'needs_key', fetchLive: null },
-  freight: { label: 'Freight / carrier data (FMCSA SAFER, project44, FourKites)', needsKey: true, status: 'needs_key', fetchLive: null },
-  iot: { label: 'IoT device telemetry (AWS IoT / Azure IoT / generic MQTT)', needsKey: true, status: 'needs_key', fetchLive: null },
-  maps: { label: 'Map imagery (Google Maps / Apple MapKit)', needsKey: true, status: 'needs_key', fetchLive: null },
+  maritime: { label: 'Maritime AIS (MarineTraffic / AISHub)', needsKey: true, status: 'needs_key', pollMs: 45000, staleMs: 135000, fetchLive: null },
+  freight: { label: 'Freight / carrier data (FMCSA SAFER, project44, FourKites)', needsKey: true, status: 'needs_key', pollMs: 45000, staleMs: 135000, fetchLive: null },
+  iot: { label: 'IoT device telemetry (AWS IoT / Azure IoT / generic MQTT)', needsKey: true, status: 'needs_key', pollMs: 30000, staleMs: 90000, fetchLive: null },
+  maps: { label: 'Map imagery (Google Maps / Apple MapKit)', needsKey: true, status: 'needs_key', pollMs: 60000, staleMs: 180000, fetchLive: null },
 };
 
+for (const source of Object.values(dataSources)) {
+  source.lastAttemptAt = 0;
+  source.lastSuccessAt = 0;
+  source.failures = 0;
+  source.lastError = '';
+  source.lastCount = null;
+}
+
+function sourceAgeMs(source) {
+  return source.lastSuccessAt ? Math.max(0, Date.now() - source.lastSuccessAt) : null;
+}
+
+function fallbackStatusFromAge(source) {
+  const age = sourceAgeMs(source);
+  return age != null && age <= source.staleMs ? 'stale' : 'simulated';
+}
+
+function markSourceAttempt(key) {
+  const source = dataSources[key];
+  if (!source) return;
+  source.lastAttemptAt = Date.now();
+  if (!source.needsKey && !source.lastSuccessAt) source.status = 'connecting';
+}
+
+function markSourceLive(key, liveCount = null) {
+  const source = dataSources[key];
+  if (!source) return;
+  source.lastSuccessAt = Date.now();
+  source.failures = 0;
+  source.lastError = '';
+  source.status = 'live';
+  source.lastCount = liveCount;
+}
+
+function markSourceFallback(key, errorLabel = 'fallback') {
+  const source = dataSources[key];
+  if (!source) return;
+  source.failures += 1;
+  source.lastError = errorLabel;
+  source.status = fallbackStatusFromAge(source);
+}
+
+function refreshSourceHealth() {
+  let changed = false;
+  for (const source of Object.values(dataSources)) {
+    if (source.needsKey) continue;
+    const age = sourceAgeMs(source);
+    if (source.status === 'live' && age != null && age > source.staleMs) {
+      source.status = 'stale';
+      changed = true;
+    } else if (source.status === 'connecting' && source.lastAttemptAt) {
+      const waitingMs = Date.now() - source.lastAttemptAt;
+      if (waitingMs > source.pollMs * CONNECTION_TIMEOUT_MULTIPLIER) {
+        source.status = 'simulated';
+        changed = true;
+      }
+    }
+  }
+  if (changed) renderDataSourceStatus();
+}
+
 async function pollLiveIss() {
+  markSourceAttempt('iss');
   try {
-    const { lat, lon } = await dataSources.iss.fetchLive();
+    const result = await dataSources.iss.fetchLive();
+    const coords = validateCoordinates(result?.lat, result?.lon);
+    if (!coords) throw new Error('bad-coordinates');
+    const [lat, lon] = coords;
     const sat = earthOpsSatellites.find((s) => s.name === 'ISS');
     if (sat) {
       const p = latLonToVec3(lat, lon, sat.ringRadius);
       sat.marker.position.copy(p);
       sat.live = true;
     }
-    dataSources.iss.status = 'live';
-  } catch {
+    markSourceLive('iss');
+  } catch (err) {
     const sat = earthOpsSatellites.find((s) => s.name === 'ISS');
     if (sat) sat.live = false;
-    dataSources.iss.status = 'simulated';
+    markSourceFallback('iss', err?.message || 'request-failed');
   }
   renderDataSourceStatus();
 }
 
 async function pollLiveFlights() {
+  markSourceAttempt('flights');
   try {
     const states = await dataSources.flights.fetchLive();
-    dataSources.flights.status = states.length ? 'live' : 'simulated';
-  } catch {
-    dataSources.flights.status = 'simulated';
+    const liveCount = Array.isArray(states) ? states.length : 0;
+    if (liveCount > 0) {
+      markSourceLive('flights', liveCount);
+    } else {
+      markSourceFallback('flights', 'empty-feed');
+    }
+  } catch (err) {
+    markSourceFallback('flights', err?.message || 'request-failed');
   }
   renderDataSourceStatus();
 }
@@ -1338,30 +1539,76 @@ async function pollLiveFlights() {
 function renderDataSourceStatus() {
   const el = document.getElementById('dataSourceStatus');
   if (!el) return;
-  const badge = (s) => s === 'live' ? 'LIVE' : s === 'needs_key' ? 'NEEDS KEY' : s === 'connecting' ? 'CONNECTING' : 'SIMULATED';
+  const badge = (s) => {
+    if (s === 'live') return 'LIVE';
+    if (s === 'stale') return 'STALE';
+    if (s === 'needs_key') return 'NEEDS KEY';
+    if (s === 'connecting') return 'CONNECTING';
+    return 'SIMULATED';
+  };
+  const ageLabel = (source) => {
+    const age = sourceAgeMs(source);
+    if (age == null) return source.status === 'connecting' ? 'awaiting first fix' : 'no live fix yet';
+    const sec = Math.round(age / 1000);
+    return sec < SOURCE_AGE_SECOND_CUTOFF ? `${sec}s ago` : `${Math.round(sec / 60)}m ago`;
+  };
   el.innerHTML = Object.values(dataSources).map((s) => `
-    <div class="row"><span>${s.label}</span><b class="badge badge-${badge(s.status).toLowerCase().replace(' ', '-')}">${badge(s.status)}</b></div>
+    <div class="row">
+      <span>${s.label}<small class="source-detail">${ageLabel(s)}</small></span>
+      <b class="badge badge-${badge(s.status).toLowerCase().replace(' ', '-')}">${badge(s.status)}</b>
+    </div>
   `).join('');
+  renderEarthOpsMetrics();
 }
 renderDataSourceStatus();
 pollLiveIss();
 pollLiveFlights();
 setInterval(pollLiveIss, 20000);
 setInterval(pollLiveFlights, 30000);
+setInterval(refreshSourceHealth, 10000);
+
+// Plain, countable facts only — no synthesized "coverage %" or composite
+// score. If a number here can't be traced to something you could count by
+// hand, it doesn't belong in this panel.
+function renderEarthOpsMetrics() {
+  const el = document.getElementById('earthOpsMetrics');
+  if (!el) return;
+  const classMatchedRoutes = earthOpsRoutes.filter((r) => earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag);
+  const visibleRoutes = classMatchedRoutes.filter((r) => earthOpsLayers[r.category]).length;
+  const distances = classMatchedRoutes.map((r) => r.distanceKm).filter(Number.isFinite);
+  const avgRouteKm = distances.length ? Math.round(distances.reduce((sum, km) => sum + km, 0) / distances.length) : 0;
+  const liveFeeds = Object.values(dataSources).filter((s) => s.status === 'live').length;
+  const issAge = sourceAgeMs(dataSources.iss);
+  const issAgeLabel = issAge == null ? 'n/a' : `${Math.round(issAge / 1000)}s`;
+  const visibleSatellites = earthOpsLayers.sat ? earthOpsSatellites.length : 0;
+  const liveSatellites = earthOpsLayers.sat ? earthOpsSatellites.filter((s) => s.live).length : 0;
+  const enabledLayers = Object.values(earthOpsLayers).filter(Boolean).length;
+  el.innerHTML = `
+    <div class="row"><span>Enabled layers</span><b class="mono">${enabledLayers}/5</b></div>
+    <div class="row"><span>Visible routes</span><b class="mono">${visibleRoutes}/${classMatchedRoutes.length}</b></div>
+    <div class="row"><span>Avg route distance</span><b class="mono">${avgRouteKm.toLocaleString()} km</b></div>
+    <div class="row"><span>Satellites live</span><b class="mono">${liveSatellites}/${visibleSatellites}</b></div>
+    <div class="row"><span>ISS telemetry age</span><b class="mono">${issAgeLabel}</b></div>
+    <div class="row"><span>Live feeds</span><b class="mono">${liveFeeds}/${Object.keys(dataSources).length}</b></div>
+  `;
+}
 
 function applyEarthOpsFilters() {
   for (const r of earthOpsRoutes) {
     const layerOn = earthOpsLayers[r.category];
     const classOn = earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag;
     const visible = layerOn && classOn;
+    // Keep route paths and moving markers aligned to the same active filter so
+    // both visuals follow layer + class filtering consistently.
     r.marker.visible = visible;
-    r.line.visible = layerOn; // corridor paths stay visible per-layer regardless of class filter
+    r.line.visible = visible;
   }
   for (const s of earthOpsSatellites) {
     s.marker.visible = earthOpsLayers.sat;
     s.ring.visible = earthOpsLayers.sat;
   }
   iotGroup.visible = earthOpsLayers.iot;
+  renderEarthOpsMetrics();
 }
 
 // ---------------------------------------------------------------------------
@@ -1493,9 +1740,62 @@ motionToggle.addEventListener('click', () => {
 // ---------------------------------------------------------------------------
 let roaming = false;
 
+// Earth Lock: holds the camera at a fixed distance from Earth's actual
+// current position every frame, so real orbital motion can't carry Earth out
+// of view the way it does with a free-flight camera left stationary (Earth's
+// own orbital speed is fast enough that this happens within seconds). Thrust
+// zooms in/out instead of flying freely while locked.
+const EARTH_LOCK_DISTANCE_MULTIPLIER = 3.5; // matches the normal travelTo approach distance
+const earthLockState = {
+  active: false,
+  distance: earth.gameRadius * EARTH_LOCK_DISTANCE_MULTIPLIER,
+  minDistance: earth.gameRadius * 1.35,
+  maxDistance: earth.gameRadius * 18,
+};
+
 const overlay = document.getElementById('overlay');
 const flashEl = document.getElementById('flash');
 const travelListEl = document.getElementById('travelList');
+const earthLockToggle = document.getElementById('earthLockToggle');
+
+function getEarthWorldPosition(target = new THREE.Vector3()) {
+  earth.mesh.getWorldPosition(target);
+  return target;
+}
+
+function syncEarthLockButton() {
+  earthLockToggle.textContent = earthLockState.active ? 'UNLOCK EARTH' : 'LOCK EARTH';
+  earthLockToggle.classList.toggle('active', earthLockState.active);
+}
+
+function syncEarthLockCamera() {
+  const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+  const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
+  const earthPos = getEarthWorldPosition();
+  camera.position.copy(earthPos).addScaledVector(forwardVec, -earthLockState.distance);
+  camera.lookAt(earthPos);
+}
+
+function setEarthLock(active, { warpFirst = false, silent = false } = {}) {
+  if (active) {
+    if (warpFirst) travelTo('Earth', { suppressFlash: true, preserveEarthLock: true });
+    const currentDistance = camera.position.distanceTo(getEarthWorldPosition());
+    earthLockState.distance = THREE.MathUtils.clamp(
+      currentDistance > 0 ? currentDistance : earth.gameRadius * EARTH_LOCK_DISTANCE_MULTIPLIER,
+      earthLockState.minDistance,
+      earthLockState.maxDistance,
+    );
+    earthLockState.active = true;
+    velocity.set(0, 0, 0);
+    syncEarthLockCamera();
+    if (!silent) flash('EARTH LOCK ON — THRUST TO ZOOM');
+  } else {
+    earthLockState.active = false;
+    velocity.set(0, 0, 0);
+    if (!silent) flash('EARTH LOCK OFF');
+  }
+  syncEarthLockButton();
+}
 
 function flash(msg) {
   flashEl.textContent = msg;
@@ -1516,7 +1816,8 @@ renderTravelList();
 // Places the ship a comfortable distance from the target, on its sunlit side,
 // looking straight at it — the camera is a real THREE.Camera so lookAt()
 // orients correctly (a plain Object3D would orient the opposite way).
-function travelTo(name) {
+function travelTo(name, { suppressFlash = false, preserveEarthLock = false } = {}) {
+  if (name !== 'Earth' && earthLockState.active && !preserveEarthLock) setEarthLock(false, { silent: true });
   let p, radius;
   if (name === 'Sun') {
     p = new THREE.Vector3(0, 0, 0);
@@ -1543,19 +1844,33 @@ function travelTo(name) {
   yaw = e.y;
   pitch = e.x;
   velocity.set(0, 0, 0);
-  flash(`WARPED TO ${name.toUpperCase()}`);
+  if (name === 'Earth' && earthLockState.active) {
+    earthLockState.distance = THREE.MathUtils.clamp(
+      camera.position.distanceTo(getEarthWorldPosition()),
+      earthLockState.minDistance,
+      earthLockState.maxDistance,
+    );
+    syncEarthLockCamera();
+  }
+  if (!suppressFlash) flash(`WARPED TO ${name.toUpperCase()}`);
 }
 
 function enterFreeRoam() {
+  setEarthLock(false, { silent: true });
   velocity.set(0, 0, 0);
   yaw = -Math.PI / 2;
   pitch = -0.05;
   camera.position.set(sceneDistance(startAU), 6, 0);
   overlay.classList.add('hidden');
   roaming = true;
+  syncEarthLockButton();
 }
 
 document.getElementById('start').addEventListener('click', enterFreeRoam);
+earthLockToggle.addEventListener('click', () => {
+  setEarthLock(!earthLockState.active, { warpFirst: !earthLockState.active });
+});
+syncEarthLockButton();
 
 // ---------------------------------------------------------------------------
 // Earth Ops panel wiring — layer toggles, class filter, API key modal.
@@ -1624,7 +1939,9 @@ function updateHud(now, dt) {
   document.getElementById('pitchVal').textContent = pitchDeg.toFixed(1) + '°';
   document.getElementById('rollVal').textContent = rollDeg.toFixed(1) + '°';
   document.getElementById('yawVal').textContent = ((yawDeg + 360) % 360).toFixed(1) + '°';
-  document.getElementById('speedVal').textContent = velocity.length().toFixed(0) + ' u/s';
+  document.getElementById('speedVal').textContent = earthLockState.active
+    ? `LOCK ${earthLockState.distance.toFixed(1)}u`
+    : velocity.length().toFixed(0) + ' u/s';
   drawGyroRadar(pitchDeg, rollDeg);
 
   // nearest body — pure telemetry, no objective attached to it. Includes the
@@ -1652,6 +1969,7 @@ function updateHud(now, dt) {
     const kmPerUnit = nearest.diameterKm / (nearest.gameRadius * 2);
     document.getElementById('tRange').textContent = `${Math.round(surfaceDist * kmPerUnit).toLocaleString()} km`;
   }
+  document.getElementById('tLock').textContent = earthLockState.active ? 'EARTH' : 'OFF';
 }
 
 // ---------------------------------------------------------------------------
@@ -1685,6 +2003,9 @@ function frame(ts) {
   updateAsteroidMatrices();
 
   for (const r of earthOpsRoutes) {
+    // Speed is purely a function of real great-circle distance (set once in
+    // routeSpeedForCategory) — nothing here ties a route's motion or
+    // brightness to an unrelated API's live/simulated status.
     r.progress = (r.progress + r.speed * dt) % 1;
     r.marker.position.copy(samplePolyline(r.points, r.progress));
   }
@@ -1703,33 +2024,50 @@ function frame(ts) {
     const dir = input.forward !== 0 ? Math.sign(input.forward) : (touchThrust ? 1 : 0);
     const boosting = input.boost || touchBoost;
 
-    const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
-    camera.quaternion.copy(camQuat);
+    if (earthLockState.active) {
+      // Thrust/brake zoom the fixed orbit distance in/out instead of flying
+      // freely — the camera re-anchors to Earth's actual position every
+      // frame, so its real orbital motion can never carry it out of view.
+      const zoomDir = dir - (input.brake ? 1 : 0);
+      if (zoomDir !== 0) {
+        const zoomRate = ACCEL * 0.5 * (boosting ? BOOST_MULT : 1);
+        earthLockState.distance = THREE.MathUtils.clamp(
+          earthLockState.distance - zoomDir * zoomRate * dt,
+          earthLockState.minDistance,
+          earthLockState.maxDistance,
+        );
+      }
+      velocity.set(0, 0, 0);
+      syncEarthLockCamera();
+    } else {
+      const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+      camera.quaternion.copy(camQuat);
 
-    const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
-    const rightVec = new THREE.Vector3(1, 0, 0).applyQuaternion(camQuat);
+      const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
+      const rightVec = new THREE.Vector3(1, 0, 0).applyQuaternion(camQuat);
 
-    if (dir !== 0) velocity.addScaledVector(forwardVec, ACCEL * dir * (boosting ? BOOST_MULT : 1) * dt);
-    if (input.strafe) velocity.addScaledVector(rightVec, ACCEL * dt * input.strafe);
+      if (dir !== 0) velocity.addScaledVector(forwardVec, ACCEL * dir * (boosting ? BOOST_MULT : 1) * dt);
+      if (input.strafe) velocity.addScaledVector(rightVec, ACCEL * dt * input.strafe);
 
-    if (input.brake) velocity.multiplyScalar(Math.max(0, 1 - 3 * dt));
+      if (input.brake) velocity.multiplyScalar(Math.max(0, 1 - 3 * dt));
 
-    const maxSpd = MAX_SPEED * (boosting ? BOOST_MULT : 1);
-    if (velocity.length() > maxSpd) velocity.setLength(maxSpd);
-    velocity.multiplyScalar(Math.max(0, 1 - DRAG * dt));
+      const maxSpd = MAX_SPEED * (boosting ? BOOST_MULT : 1);
+      if (velocity.length() > maxSpd) velocity.setLength(maxSpd);
+      velocity.multiplyScalar(Math.max(0, 1 - DRAG * dt));
 
-    camera.position.addScaledVector(velocity, dt);
+      camera.position.addScaledVector(velocity, dt);
 
-    // Keep a sane distance from the sun's core — slide tangentially rather
-    // than killing all momentum, so the ship glides past instead of sticking.
-    const distFromSun = camera.position.length();
-    if (distFromSun < SUN_RADIUS + 4) {
-      const normal = distFromSun > 0.001
-        ? camera.position.clone().normalize()
-        : new THREE.Vector3(1, 0, 0);
-      camera.position.copy(normal.clone().multiplyScalar(SUN_RADIUS + 4));
-      const radialSpeed = velocity.dot(normal);
-      if (radialSpeed < 0) velocity.addScaledVector(normal, -radialSpeed);
+      // Keep a sane distance from the sun's core — slide tangentially rather
+      // than killing all momentum, so the ship glides past instead of sticking.
+      const distFromSun = camera.position.length();
+      if (distFromSun < SUN_RADIUS + 4) {
+        const normal = distFromSun > 0.001
+          ? camera.position.clone().normalize()
+          : new THREE.Vector3(1, 0, 0);
+        camera.position.copy(normal.clone().multiplyScalar(SUN_RADIUS + 4));
+        const radialSpeed = velocity.dot(normal);
+        if (radialSpeed < 0) velocity.addScaledVector(normal, -radialSpeed);
+      }
     }
 
     updateHud(ts, dt);
