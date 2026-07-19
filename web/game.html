@@ -424,7 +424,7 @@ body {
 
   <div class="overlay" id="overlay">
     <h1>SOLAR EXPLORER</h1>
-    <p class="lede">Pilot a scan probe through a physically-scaled model of the solar system. Fly close to each planet and hold position to complete a scan. Real orbital mechanics (Kepler's third law) drive every planet's motion &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Avoid the asteroid belt between Mars and Jupiter &mdash; it damages your hull.</p>
+    <p class="lede">Pilot a scan probe through a physically-scaled model of the solar system. Real elliptical orbits (Kepler's laws), real axial tilts, real major moons, and a backdrop of the actual brightest stars at their real positions &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Fly close to each planet and hold position to scan it. Avoid the asteroid belt between Mars and Jupiter &mdash; it damages your hull.</p>
     <div class="controls-grid">
       <div><b>Desktop</b><br/>Mouse look (click to lock) &middot; W/S thrust &middot; A/D strafe &middot; Shift boost &middot; Space brake</div>
       <div><b>Touch</b><br/>Drag right side to look &middot; hold THRUST &middot; hold BOOST</div>
@@ -459,15 +459,70 @@ const MERCURY_PERIOD_DAYS = 88;
 const MERCURY_AU = 0.39;
 const MERCURY_SCENE_PERIOD_S = 42; // gameplay pacing anchor
 
+// Axial tilt (deg, real obliquity) and orbital eccentricity are genuine values too.
 const PLANETS = [
-  { name: 'Mercury', au: 0.39, diameterKm: 4879, tempC: 167, moons: 0, periodDays: 88, rotHours: 1408, color: 0x9c8a7a, gameRadius: 3.0 },
-  { name: 'Venus', au: 0.72, diameterKm: 12104, tempC: 464, moons: 0, periodDays: 225, rotHours: -5832, color: 0xd9c27a, gameRadius: 5.0 },
-  { name: 'Earth', au: 1.00, diameterKm: 12742, tempC: 15, moons: 1, periodDays: 365, rotHours: 24, color: 0x3d7fd6, gameRadius: 5.2 },
-  { name: 'Mars', au: 1.52, diameterKm: 6779, tempC: -63, moons: 2, periodDays: 687, rotHours: 24.6, color: 0xc1553a, gameRadius: 4.0 },
-  { name: 'Jupiter', au: 5.20, diameterKm: 139820, tempC: -110, moons: 95, periodDays: 4333, rotHours: 9.9, color: 0xc9a074, gameRadius: 14.0 },
-  { name: 'Saturn', au: 9.58, diameterKm: 116460, tempC: -178, moons: 146, periodDays: 10759, rotHours: 10.7, color: 0xd8c48a, gameRadius: 12.0, rings: true },
-  { name: 'Uranus', au: 19.20, diameterKm: 50724, tempC: -195, moons: 27, periodDays: 30687, rotHours: -17.2, color: 0x8fd4d0, gameRadius: 8.0 },
-  { name: 'Neptune', au: 30.05, diameterKm: 49244, tempC: -201, moons: 14, periodDays: 60190, rotHours: 16.1, color: 0x4361c9, gameRadius: 7.8 },
+  { name: 'Mercury', au: 0.39, diameterKm: 4879, tempC: 167, moons: 0, periodDays: 88, rotHours: 1408, color: 0x9c8a7a, gameRadius: 3.0, tilt: 0.03, ecc: 0.206 },
+  { name: 'Venus', au: 0.72, diameterKm: 12104, tempC: 464, moons: 0, periodDays: 225, rotHours: -5832, color: 0xd9c27a, gameRadius: 5.0, tilt: 177.4, ecc: 0.007 },
+  { name: 'Earth', au: 1.00, diameterKm: 12742, tempC: 15, moons: 1, periodDays: 365, rotHours: 24, color: 0x3d7fd6, gameRadius: 5.2, tilt: 23.44, ecc: 0.017 },
+  { name: 'Mars', au: 1.52, diameterKm: 6779, tempC: -63, moons: 2, periodDays: 687, rotHours: 24.6, color: 0xc1553a, gameRadius: 4.0, tilt: 25.19, ecc: 0.093 },
+  { name: 'Jupiter', au: 5.20, diameterKm: 139820, tempC: -110, moons: 95, periodDays: 4333, rotHours: 9.9, color: 0xc9a074, gameRadius: 14.0, tilt: 3.13, ecc: 0.048 },
+  { name: 'Saturn', au: 9.58, diameterKm: 116460, tempC: -178, moons: 146, periodDays: 10759, rotHours: 10.7, color: 0xd8c48a, gameRadius: 12.0, rings: true, tilt: 26.73, ecc: 0.056 },
+  { name: 'Uranus', au: 19.20, diameterKm: 50724, tempC: -195, moons: 27, periodDays: 30687, rotHours: -17.2, color: 0x8fd4d0, gameRadius: 8.0, tilt: 97.77, ecc: 0.046 },
+  { name: 'Neptune', au: 30.05, diameterKm: 49244, tempC: -201, moons: 14, periodDays: 60190, rotHours: 16.1, color: 0x4361c9, gameRadius: 7.8, tilt: 28.32, ecc: 0.010 },
+];
+
+// A handful of the real Solar System's biggest moons (real color/relative size/period),
+// rendered orbiting their parent planet so the sky isn't just eight bare spheres.
+// Negative periodDays encodes a genuine retrograde orbit (Triton really does orbit backwards).
+const MOONS = {
+  Earth: [{ name: 'Moon', color: 0xb8b3ab, radiusRatio: 0.27, orbitRatio: 3.4, periodDays: 27.3 }],
+  Mars: [
+    { name: 'Phobos', color: 0x8a7a68, radiusRatio: 0.05, orbitRatio: 1.7, periodDays: 0.32 },
+    { name: 'Deimos', color: 0x9a8c78, radiusRatio: 0.035, orbitRatio: 2.4, periodDays: 1.26 },
+  ],
+  Jupiter: [
+    { name: 'Io', color: 0xe8d27a, radiusRatio: 0.12, orbitRatio: 1.7, periodDays: 1.77 },
+    { name: 'Europa', color: 0xe4e0d4, radiusRatio: 0.10, orbitRatio: 2.05, periodDays: 3.55 },
+    { name: 'Ganymede', color: 0x9a8f7d, radiusRatio: 0.17, orbitRatio: 2.45, periodDays: 7.15 },
+    { name: 'Callisto', color: 0x6c6357, radiusRatio: 0.15, orbitRatio: 2.9, periodDays: 16.7 },
+  ],
+  Saturn: [{ name: 'Titan', color: 0xd9a558, radiusRatio: 0.14, orbitRatio: 2.7, periodDays: 15.9 }],
+  Uranus: [{ name: 'Titania', color: 0xa8a0a0, radiusRatio: 0.10, orbitRatio: 2.1, periodDays: 8.7 }],
+  Neptune: [{ name: 'Triton', color: 0xbcd8dc, radiusRatio: 0.14, orbitRatio: 2.3, periodDays: -5.9 }],
+};
+// Tuned so Phobos (real fastest moon, 0.32 real days) completes a game-visible orbit in ~4s;
+// every other moon's relative speed still follows its own real period off that anchor.
+const MOON_ANGULAR_BASE = (Math.PI * 2 / 4) * 0.32;
+
+// The ~80 brightest naked-eye stars at their approximate real right ascension (hours) /
+// declination (degrees) / apparent magnitude, so the backdrop traces real constellations
+// instead of a random point cloud. Coordinates are well-known approximations, not a live
+// astronomical catalog feed.
+const BRIGHT_STARS = [
+  ['Sirius', 6.75, -16.7, -1.46], ['Canopus', 6.4, -52.7, -0.74], ['Rigil Kentaurus', 14.66, -60.8, -0.27],
+  ['Arcturus', 14.26, 19.2, -0.05], ['Vega', 18.62, 38.8, 0.03], ['Capella', 5.28, 46.0, 0.08],
+  ['Rigel', 5.24, -8.2, 0.13], ['Procyon', 7.66, 5.2, 0.34], ['Achernar', 1.63, -57.2, 0.46],
+  ['Betelgeuse', 5.92, 7.4, 0.5], ['Hadar', 14.06, -60.4, 0.61], ['Altair', 19.85, 8.9, 0.77],
+  ['Acrux', 12.44, -63.1, 0.77], ['Aldebaran', 4.6, 16.5, 0.85], ['Spica', 13.42, -11.2, 1.04],
+  ['Antares', 16.49, -26.4, 1.09], ['Pollux', 7.76, 28.0, 1.14], ['Fomalhaut', 22.96, -29.6, 1.16],
+  ['Deneb', 20.69, 45.3, 1.25], ['Mimosa', 12.79, -59.7, 1.25], ['Regulus', 10.14, 12.0, 1.36],
+  ['Adhara', 6.98, -29.0, 1.5], ['Castor', 7.58, 31.9, 1.58], ['Gacrux', 12.52, -57.1, 1.63],
+  ['Shaula', 17.56, -37.1, 1.63], ['Bellatrix', 5.42, 6.3, 1.64], ['Elnath', 5.44, 28.6, 1.65],
+  ['Miaplacidus', 9.22, -69.7, 1.67], ['Alnilam', 5.6, -1.2, 1.69], ['Alnitak', 5.68, -1.9, 1.79],
+  ['Alioth', 12.9, 56.0, 1.76], ['Dubhe', 11.06, 61.75, 1.79], ['Mirfak', 3.4, 49.9, 1.79],
+  ['Wezen', 7.14, -26.4, 1.83], ['Sargas', 17.62, -43.0, 1.87], ['Kaus Australis', 18.4, -34.4, 1.85],
+  ['Avior', 8.38, -59.5, 1.86], ['Alkaid', 13.79, 49.3, 1.85], ['Menkalinan', 6.0, 44.9, 1.9],
+  ['Atria', 16.81, -69.0, 1.91], ['Alhena', 6.63, 16.4, 1.93], ['Peacock', 20.43, -56.7, 1.94],
+  ['Alsephina', 8.75, -54.7, 1.96], ['Mirzam', 6.38, -18.0, 1.98], ['Polaris', 2.53, 89.26, 1.98],
+  ['Alphard', 9.46, -8.66, 1.99], ['Hamal', 2.12, 23.5, 2.0], ['Diphda', 0.73, -17.99, 2.04],
+  ['Nunki', 18.92, -26.3, 2.05], ['Menkent', 14.11, -36.37, 2.06], ['Mizar', 13.4, 54.9, 2.04],
+  ['Saiph', 5.8, -9.67, 2.07], ['Sadr', 20.37, 40.3, 2.23], ['Rasalhague', 17.58, 12.56, 2.08],
+  ['Algol', 3.14, 40.96, 2.12], ['Almach', 2.07, 42.33, 2.1], ['Denebola', 11.82, 14.57, 2.14],
+  ['Naos', 8.06, -40.0, 2.21], ['Muhlifain', 12.69, -48.96, 2.2], ['Mirach', 1.16, 35.6, 2.06],
+  ['Alnair', 22.14, -46.96, 1.74], ['Kochab', 14.85, 74.16, 2.08], ['Merak', 11.03, 56.38, 2.37],
+  ['Phecda', 11.9, 53.7, 2.44], ['Megrez', 12.26, 57.03, 3.31], ['Deneb Algedi', 21.78, -16.13, 2.87],
+  ['Albireo', 19.51, 27.96, 3.18], ['Schedar', 0.67, 56.54, 2.24], ['Caph', 0.15, 59.15, 2.28],
+  ['Tsih', 0.95, 60.72, 2.47], ['Ruchbah', 1.43, 60.24, 2.68], ['Segin', 1.9, 63.67, 3.35],
 ];
 
 const SUN_RADIUS = 26;
@@ -502,8 +557,10 @@ const startAU = 0.15;
 camera.position.set(sceneDistance(startAU), 6, 0);
 camera.lookAt(0, 0, 0);
 
-scene.add(new THREE.AmbientLight(0x404050, 0.35));
-const sunLight = new THREE.PointLight(0xfff2d0, 3.2, 0, 0.55);
+scene.add(new THREE.AmbientLight(0x404050, 0.45));
+// Gentle decay so outer planets still read dimmer than inner ones (real inverse-square
+// falloff would leave Neptune essentially invisible at this scale) but nothing goes black.
+const sunLight = new THREE.PointLight(0xfff2d0, 14, 0, 0.3);
 scene.add(sunLight);
 
 addEventListener('resize', () => {
@@ -533,10 +590,59 @@ function buildStarfield() {
 }
 buildStarfield();
 
+function starTier(mag) {
+  if (mag < 0.5) return 0;
+  if (mag < 1.5) return 1;
+  if (mag < 2.3) return 2;
+  return 3;
+}
+
+function buildRealStars() {
+  const R = 3200;
+  const tierSizes = [7, 5, 3.4, 2.2];
+  const warm = new Set(['Betelgeuse', 'Antares', 'Aldebaran', 'Arcturus', 'Gacrux', 'Mirach']);
+  const hot = new Set(['Rigel', 'Sirius', 'Vega', 'Spica', 'Regulus', 'Bellatrix', 'Achernar', 'Altair', 'Alnitak', 'Alnilam']);
+
+  const buckets = [[], [], [], []];
+  for (const star of BRIGHT_STARS) buckets[starTier(star[3])].push(star);
+
+  buckets.forEach((list, tier) => {
+    if (!list.length) return;
+    const positions = new Float32Array(list.length * 3);
+    const colors = new Float32Array(list.length * 3);
+    list.forEach(([name, raH, decD], i) => {
+      const theta = THREE.MathUtils.degToRad(raH * 15);
+      const phi = THREE.MathUtils.degToRad(90 - decD);
+      positions[i * 3] = R * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = R * Math.cos(phi);
+      positions[i * 3 + 2] = R * Math.sin(phi) * Math.sin(theta);
+      const c = new THREE.Color(warm.has(name) ? 0xffb37a : hot.has(name) ? 0xbfd4ff : 0xffffff);
+      colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({ size: tierSizes[tier], vertexColors: true, sizeAttenuation: false, transparent: true, opacity: 0.95 });
+    scene.add(new THREE.Points(geo, mat));
+  });
+}
+buildRealStars();
+
+// ---------------------------------------------------------------------------
+// Elliptical orbit math (real Kepler mechanics, not circles)
+// ---------------------------------------------------------------------------
+function solveEccentricAnomaly(meanAnomaly, ecc) {
+  let E = meanAnomaly;
+  for (let i = 0; i < 6; i++) {
+    E -= (E - ecc * Math.sin(E) - meanAnomaly) / (1 - ecc * Math.cos(E));
+  }
+  return E;
+}
+
 // ---------------------------------------------------------------------------
 // Procedural planet + sun textures (no external image assets required)
 // ---------------------------------------------------------------------------
-function noiseTexture(baseColor, { bands = 0, spots = 40, roughness = 24 } = {}) {
+function noiseTexture(baseColor, { bands = 0, spots = 40, roughness = 24, iceCaps = false, bigSpot = null } = {}) {
   const size = 256;
   const cnv = document.createElement('canvas');
   cnv.width = size; cnv.height = size / 2;
@@ -570,9 +676,87 @@ function noiseTexture(baseColor, { bands = 0, spots = 40, roughness = 24 } = {})
     ctx.fill();
   }
 
+  // A single large storm (Jupiter's Great Red Spot / Neptune's Great Dark Spot).
+  if (bigSpot) {
+    const x = cnv.width * 0.62, y = cnv.height * 0.62;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, cnv.height * 0.22);
+    grad.addColorStop(0, bigSpot);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, cnv.height * 0.24, cnv.height * 0.14, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Polar ice caps for rocky worlds with real ice/frost at their poles.
+  if (iceCaps) {
+    ctx.fillStyle = 'rgba(238,242,246,0.85)';
+    ctx.fillRect(0, 0, cnv.width, cnv.height * 0.08);
+    ctx.fillRect(0, cnv.height * 0.92, cnv.width, cnv.height * 0.08);
+  }
+
   const tex = new THREE.CanvasTexture(cnv);
   tex.wrapS = THREE.RepeatWrapping;
   return tex;
+}
+
+function earthTexture() {
+  const w = 256, h = 128;
+  const cnv = document.createElement('canvas');
+  cnv.width = w; cnv.height = h;
+  const ctx = cnv.getContext('2d');
+  ctx.fillStyle = '#1c4d82';
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 30; i++) {
+    const x = Math.random() * w, y = h * 0.15 + Math.random() * h * 0.7, r = 8 + Math.random() * 22;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(88,120,58,0.9)');
+    grad.addColorStop(0.7, 'rgba(96,110,55,0.6)');
+    grad.addColorStop(1, 'rgba(96,110,55,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * 0.7, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(240,245,250,0.9)';
+  ctx.fillRect(0, 0, w, h * 0.07);
+  ctx.fillRect(0, h * 0.93, w, h * 0.07);
+  return new THREE.CanvasTexture(cnv);
+}
+
+function earthCloudsTexture() {
+  const w = 256, h = 128;
+  const cnv = document.createElement('canvas');
+  cnv.width = w; cnv.height = h;
+  const ctx = cnv.getContext('2d');
+  for (let i = 0; i < 45; i++) {
+    const x = Math.random() * w, y = Math.random() * h, r = 6 + Math.random() * 18;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(255,255,255,0.6)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return new THREE.CanvasTexture(cnv);
+}
+
+function ringTexture() {
+  const w = 256, h = 32;
+  const cnv = document.createElement('canvas');
+  cnv.width = w; cnv.height = h;
+  const ctx = cnv.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0.0, 'rgba(212,197,162,0.85)');
+  grad.addColorStop(0.32, 'rgba(200,185,150,0.55)');
+  grad.addColorStop(0.4, 'rgba(120,110,90,0.12)');
+  grad.addColorStop(0.48, 'rgba(215,200,165,0.75)');
+  grad.addColorStop(0.75, 'rgba(190,175,140,0.5)');
+  grad.addColorStop(1.0, 'rgba(160,148,120,0.18)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  return new THREE.CanvasTexture(cnv);
 }
 
 function sunTexture() {
@@ -629,44 +813,66 @@ scene.add(glowSprite(0xffcc66, SUN_RADIUS * 6));
 // ---------------------------------------------------------------------------
 // Planets
 // ---------------------------------------------------------------------------
-const bodies = PLANETS.map((p) => {
-  const orbitRadius = sceneDistance(p.au);
-  const angularSpeed = orbitalAngularSpeed(p.au);
-  const angle = Math.random() * Math.PI * 2;
+function planetTexture(p) {
+  if (p.name === 'Earth') return earthTexture();
+  if (p.name === 'Mars') return noiseTexture(p.color, { spots: 50, roughness: 14, iceCaps: true });
+  if (p.name === 'Jupiter') return noiseTexture(p.color, { bands: 10, spots: 60, bigSpot: 'rgba(196,90,60,0.75)' });
+  if (p.name === 'Saturn') return noiseTexture(p.color, { bands: 8, spots: 40 });
+  if (p.name === 'Neptune') return noiseTexture(p.color, { spots: 30, roughness: 18, bigSpot: 'rgba(30,40,70,0.6)' });
+  return noiseTexture(p.color, { spots: 45, roughness: 24 });
+}
 
+const bodies = PLANETS.map((p) => {
+  const orbitRadius = sceneDistance(p.au); // semi-major axis
+  const semiMinor = orbitRadius * Math.sqrt(1 - p.ecc * p.ecc);
+  const angularSpeed = orbitalAngularSpeed(p.au);
+  const meanAnomaly = Math.random() * Math.PI * 2;
+  const argPeriapsis = Math.random() * Math.PI * 2;
+
+  // pivot tracks the planet's current orbital position (updated per-frame below);
+  // tiltGroup carries the real axial tilt; mesh spins around that tilted axis.
   const pivot = new THREE.Object3D();
   scene.add(pivot);
+  const tiltGroup = new THREE.Object3D();
+  tiltGroup.rotation.z = THREE.MathUtils.degToRad(p.tilt);
+  pivot.add(tiltGroup);
 
-  const bands = p.name === 'Jupiter' || p.name === 'Saturn' ? 10 : 0;
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(p.gameRadius, 40, 28),
-    new THREE.MeshStandardMaterial({ map: noiseTexture(p.color, { bands, spots: bands ? 60 : 45 }), roughness: 0.9, metalness: 0.05 }),
+    new THREE.MeshStandardMaterial({ map: planetTexture(p), roughness: 0.9, metalness: 0.05 }),
   );
-  mesh.position.set(orbitRadius, 0, 0);
-  mesh.rotation.z = p.name === 'Uranus' ? Math.PI * 0.55 : 0.1;
-  pivot.add(mesh);
-  pivot.rotation.y = angle;
+  tiltGroup.add(mesh);
+
+  if (p.name === 'Earth') {
+    const clouds = new THREE.Mesh(
+      new THREE.SphereGeometry(p.gameRadius * 1.03, 32, 24),
+      new THREE.MeshStandardMaterial({ map: earthCloudsTexture(), transparent: true, opacity: 0.7, roughness: 1 }),
+    );
+    tiltGroup.add(clouds);
+    mesh.userData.clouds = clouds;
+  }
 
   if (p.rings) {
     const ringGeo = new THREE.RingGeometry(p.gameRadius * 1.4, p.gameRadius * 2.3, 64);
     const uv = ringGeo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i), 1);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xcbb98f, side: THREE.DoubleSide, transparent: true, opacity: 0.55 });
+    const ringMat = new THREE.MeshBasicMaterial({ map: ringTexture(), side: THREE.DoubleSide, transparent: true });
     const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI / 2.4;
-    mesh.add(ring);
+    ring.rotation.x = Math.PI / 2;
+    tiltGroup.add(ring);
   }
 
-  // Orbit path line
+  // Orbit path line — a real ellipse (periapsis-oriented), not a circle.
   const curvePts = [];
   for (let i = 0; i <= 128; i++) {
     const t = (i / 128) * Math.PI * 2;
-    curvePts.push(new THREE.Vector3(Math.cos(t) * orbitRadius, 0, Math.sin(t) * orbitRadius));
+    curvePts.push(new THREE.Vector3(Math.cos(t) * orbitRadius, 0, Math.sin(t) * semiMinor));
   }
   const orbitLine = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints(curvePts),
     new THREE.LineBasicMaterial({ color: 0x2a4a48, transparent: true, opacity: 0.35 }),
   );
+  orbitLine.rotation.y = argPeriapsis;
   scene.add(orbitLine);
 
   const tangentialSpeed = angularSpeed * orbitRadius;
@@ -675,14 +881,39 @@ const bodies = PLANETS.map((p) => {
   return {
     ...p,
     orbitRadius,
+    semiMinor,
     angularSpeed,
+    meanAnomaly,
+    argPeriapsis,
     scanRange,
     pivot,
+    tiltGroup,
     mesh,
     scanned: false,
     scanProgress: 0,
   };
 });
+
+// ---------------------------------------------------------------------------
+// Moons — orbit their planet's pivot directly, independent of the planet's
+// own axial tilt/spin (a reasonable simplification for a game).
+// ---------------------------------------------------------------------------
+function addMoons(planetBody) {
+  const list = MOONS[planetBody.name];
+  if (!list) return [];
+  return list.map((m) => {
+    const orbitRadius = planetBody.gameRadius * m.orbitRatio;
+    const gameRadius = Math.max(0.4, planetBody.gameRadius * m.radiusRatio);
+    const angularSpeed = (MOON_ANGULAR_BASE / Math.abs(m.periodDays)) * Math.sign(m.periodDays);
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(gameRadius, 16, 12),
+      new THREE.MeshStandardMaterial({ map: noiseTexture(m.color, { spots: 18, roughness: 10 }), roughness: 1 }),
+    );
+    planetBody.pivot.add(mesh);
+    return { name: m.name, mesh, orbitRadius, angularSpeed, angle: Math.random() * Math.PI * 2 };
+  });
+}
+const allMoons = bodies.flatMap(addMoons);
 
 // ---------------------------------------------------------------------------
 // Asteroid belt (between Mars and Jupiter)
@@ -1078,8 +1309,18 @@ function frame(ts) {
   lastTs = ts;
 
   for (const b of bodies) {
-    b.pivot.rotation.y += b.angularSpeed * dt;
+    b.meanAnomaly += b.angularSpeed * dt;
+    const E = solveEccentricAnomaly(b.meanAnomaly, b.ecc);
+    const lx = b.orbitRadius * (Math.cos(E) - b.ecc);
+    const lz = b.semiMinor * Math.sin(E);
+    const cosP = Math.cos(b.argPeriapsis), sinP = Math.sin(b.argPeriapsis);
+    b.pivot.position.set(lx * cosP - lz * sinP, 0, lx * sinP + lz * cosP);
     b.mesh.rotation.y += (Math.PI * 2) / Math.max(2, Math.abs(b.rotHours) / 3) * dt * Math.sign(b.rotHours || 1);
+    if (b.mesh.userData.clouds) b.mesh.userData.clouds.rotation.y += 0.02 * dt;
+  }
+  for (const m of allMoons) {
+    m.angle += m.angularSpeed * dt;
+    m.mesh.position.set(Math.cos(m.angle) * m.orbitRadius, 0, Math.sin(m.angle) * m.orbitRadius);
   }
   for (let i = 0; i < ASTEROID_COUNT; i++) {
     const a = asteroidData[i];
