@@ -1347,7 +1347,7 @@ function renderEarthScaleStatus() {
   const markup = EARTH_SCALE_LAYERS.map((layer) => {
     const active = layer.key === activeLayer.key;
     const readiness = layerReadinessBadge(layer.sourceKeys);
-    const readinessLabel = readiness === 'needs_key' ? 'NEEDS KEY' : readiness.toUpperCase().replace('_', ' ');
+    const readinessLabel = readiness === 'needs_key' ? 'NEEDS KEY' : readiness.toUpperCase().replace(/_/g, ' ');
     const detail = layer.sourceKeys.length
       ? `depends on ${layer.sourceKeys.map((key) => dataSources[key]?.label || key).join(' + ')}`
       : 'uses the static starfield + planetary simulation';
@@ -1356,7 +1356,7 @@ function renderEarthScaleStatus() {
         <span>${layer.label}<small class="source-detail">${detail}</small></span>
         <span class="status-stack">
           <b class="badge ${active ? 'badge-active' : 'badge-standby'}">${active ? 'ACTIVE' : 'READY'}</b>
-          <b class="badge badge-${readiness.replace('_', '-')}">${readinessLabel}</b>
+          <b class="badge badge-${readiness.replace(/_/g, '-')}">${readinessLabel}</b>
         </span>
       </div>
     `;
