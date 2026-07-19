@@ -76,7 +76,7 @@
       <div class="panel-modal-inner">
         <button id="closeEarthOps" class="modal-close">&times;</button>
         <div class="panel-title">EARTH OPS &mdash; LOGISTICS TWIN</div>
-        <p class="note">Real geography (cities, airports, ports) and real satellite-altitude orbital mechanics. Traffic along these corridors is simulated unless a source below reads LIVE &mdash; see status list.</p>
+        <p class="note">Real geography (cities, airports, ports) and real satellite-altitude orbital mechanics. Route pacing uses category/class weighting, and live feeds move through CONNECTING/LIVE/STALE/SIMULATED states with automatic fallback.</p>
 
         <div class="panel-title">LAYERS</div>
         <label class="layer-row"><input type="checkbox" data-layer="air" checked /> Air traffic (passenger routes)</label>
@@ -94,6 +94,9 @@
           <option value="food">Food / agriculture</option>
           <option value="industrial">Industrial</option>
         </select>
+
+        <div class="panel-title">MODEL SNAPSHOT</div>
+        <div id="earthOpsMetrics"></div>
 
         <div class="panel-title">DATA SOURCES</div>
         <div id="dataSourceStatus"></div>

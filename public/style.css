@@ -362,10 +362,28 @@ body {
 #dataSourceStatus .row {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 8px;
   padding: 3px 0;
   color: var(--ink-dim);
 }
+#dataSourceStatus .row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.source-detail {
+  font-size: 10px;
+  color: rgba(127,163,156,0.85);
+}
+#earthOpsMetrics .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--ink-dim);
+}
+#earthOpsMetrics .row b { color: var(--ink); }
 .badge {
   font-size: 9px;
   letter-spacing: 0.04em;
@@ -374,6 +392,7 @@ body {
   white-space: nowrap;
 }
 .badge-live { background: rgba(95,214,200,0.2); color: var(--signal); }
+.badge-stale { background: rgba(224,176,74,0.2); color: #e0b04a; }
 .badge-simulated { background: rgba(255,255,255,0.1); color: var(--ink-dim); }
 .badge-needs-key { background: rgba(224,176,74,0.18); color: #e0b04a; }
 .badge-connecting { background: rgba(255,255,255,0.08); color: var(--ink-dim); }
