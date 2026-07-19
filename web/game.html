@@ -3,6 +3,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="mobile-web-app-capable" content="yes" />
+<meta name="screen-orientation" content="auto" />
 <title>solar explorer</title>
 <style>
 :root {
@@ -12,8 +13,6 @@
   --ink-dim: #7fa39c;
   --line: rgba(95, 214, 200, 0.28);
   --signal: #5fd6c8;
-  --noise: #d65f6f;
-  --amber: #e0b04a;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -48,7 +47,7 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
 }
@@ -71,32 +70,18 @@ body {
 .title-box { flex: 1 1 160px; }
 .title-box .title { color: var(--signal); font-weight: 700; letter-spacing: 0.04em; font-size: 14px; display: block; }
 .title-box .subtitle { color: var(--ink-dim); font-size: 10px; }
-.clock-box, .hull-box, .score-box, .timer-box { min-width: 78px; }
+.clock-box { min-width: 78px; }
 .hud-top .mono { font-size: 15px; }
-
-.bar {
-  margin-top: 3px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255,255,255,0.12);
-  overflow: hidden;
-}
-.bar-fill {
-  height: 100%;
-  width: 100%;
-  background: var(--signal);
-  transition: width 0.2s, background 0.2s;
-}
 
 .hud-left, .hud-right {
   position: absolute;
-  top: 70px;
+  top: 66px;
   width: 168px;
   font-size: 11px;
   pointer-events: auto;
 }
-.hud-left { left: 10px; }
-.hud-right { right: 10px; }
+.hud-left { left: max(10px, env(safe-area-inset-left)); }
+.hud-right { right: max(10px, env(safe-area-inset-right)); }
 
 .panel-title {
   color: var(--signal);
@@ -138,54 +123,41 @@ body {
 
 .hud-bottom {
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: max(10px, env(safe-area-inset-left));
+  right: max(10px, env(safe-area-inset-right));
   bottom: max(10px, env(safe-area-inset-bottom));
-  max-height: 30dvh;
+  max-height: 26dvh;
   overflow-y: auto;
   pointer-events: auto;
   font-size: 11px;
 }
-.mission-list .m-row {
+
+.travel-list {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 0;
-  color: var(--ink-dim);
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.mission-list .m-row.done { color: var(--signal); }
-.mission-list .m-row.done .m-name::before { content: "\2713 "; }
-.mission-list .m-row .m-name::before { content: "\25CB "; }
+.travel-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(95,214,200,0.08);
+  color: var(--ink);
+  pointer-events: auto;
+}
+.travel-btn:active { background: var(--signal); color: #05201c; }
 
 .reticle {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  pointer-events: none;
 }
 .reticle-ring { fill: none; stroke: rgba(255,255,255,0.25); stroke-width: 2; }
-.reticle-progress {
-  fill: none;
-  stroke: var(--signal);
-  stroke-width: 4;
-  stroke-linecap: round;
-  transform-origin: 50px 50px;
-  transform: rotate(-90deg);
-  stroke-dasharray: 289;
-  stroke-dashoffset: 289;
-  transition: stroke-dashoffset 0.1s linear;
-}
 .reticle-tick { stroke: rgba(255,255,255,0.4); stroke-width: 2; }
-.reticle-label {
-  font-size: 10px;
-  color: var(--signal);
-  text-shadow: 0 0 6px rgba(0,0,0,0.8);
-  min-height: 12px;
-}
 
 .flash {
   position: absolute;
@@ -223,13 +195,42 @@ body {
   font-size: 11px;
   letter-spacing: 0.05em;
 }
-.thrust-btn { left: 14px; width: 92px; height: 92px; }
-.boost-btn { left: 116px; width: 60px; height: 60px; bottom: max(24px, env(safe-area-inset-bottom)); }
+.thrust-btn { left: max(14px, env(safe-area-inset-left)); width: 92px; height: 92px; }
+.boost-btn { left: calc(max(14px, env(safe-area-inset-left)) + 102px); width: 60px; height: 60px; bottom: max(24px, env(safe-area-inset-bottom)); }
 .thrust-btn:active, .boost-btn:active { background: var(--signal); color: #05201c; }
 
-@media (min-width: 720px) {
+/* Touch controls are keyed off input capability, not screen width — a phone
+   rotated to landscape is often wider than 720px but is still a touchscreen. */
+@media (hover: hover) and (pointer: fine) {
   .thrust-btn, .boost-btn, .touch-look { display: none; }
+}
+@media (min-width: 720px) {
   .hud-left, .hud-right { width: 200px; }
+}
+
+/* On touch devices the thrust/boost buttons sit bottom-left; give the
+   full-width quick-travel panel enough clearance so it never overlaps them. */
+@media (hover: none) {
+  .hud-bottom { bottom: 130px; max-height: 22dvh; }
+}
+
+/* Landscape phones: shorter viewport height, so keep side panels compact
+   and out of the way of the thrust/boost buttons and reticle. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .hud-top { font-size: 10px; }
+  .hud-top .mono { font-size: 13px; }
+  .hud-left, .hud-right {
+    top: 50px;
+    max-height: 72dvh;
+    overflow-y: auto;
+    width: 150px;
+  }
+  .hud-bottom { max-height: 34dvh; }
+  .thrust-btn { width: 72px; height: 72px; }
+  .boost-btn { width: 48px; height: 48px; left: calc(max(14px, env(safe-area-inset-left)) + 82px); }
+  .overlay { padding: 14px; gap: 8px; }
+  .overlay h1 { font-size: 20px; }
+  .overlay .lede { font-size: 12px; }
 }
 
 .overlay {
@@ -287,154 +288,78 @@ body {
   font-weight: 700;
 }
 .overlay button.primary:active { opacity: 0.85; }
-.overlay button:disabled { opacity: 0.5; }
-
-.summary {
-  display: flex;
-  gap: 18px;
-  flex-wrap: wrap;
-  justify-content: center;
-  font-size: 12px;
-  color: var(--ink-dim);
-}
-.summary b { color: var(--ink); font-size: 16px; display: block; }
-
-.error {
-  color: var(--noise);
-  font-size: 12px;
-  max-width: 260px;
-  margin: 0;
-}
-.error.hidden { display: none; }
-
-#board {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--ink-dim);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  max-width: 280px;
-}
-#board .row { display: flex; justify-content: space-between; gap: 8px; }
-#board .row b { color: var(--ink); }
-
-.name-entry {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-.name-entry input {
-  font-family: inherit;
-  font-size: 14px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,0.04);
-  color: var(--ink);
-  width: 150px;
-}
-.name-entry button {
-  font-family: inherit;
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: none;
-  background: var(--signal);
-  color: #05201c;
-}
-
-.note { color: var(--ink-dim); font-size: 11px; max-width: 280px; }
 
 </style>
 
 <div id="app">
-  <canvas id="scene"></canvas>
+    <canvas id="scene"></canvas>
 
-  <div class="hud">
-    <div class="hud-top">
-      <div class="hud-box title-box">
-        <span class="title">SOLAR EXPLORER</span>
-        <span class="subtitle">flight sim &middot; live scan mission</span>
+    <div class="hud">
+      <div class="hud-top">
+        <div class="hud-box title-box">
+          <span class="title">SOLAR EXPLORER</span>
+          <span class="subtitle">free-roam solar system flight sim</span>
+        </div>
+        <div class="hud-box clock-box">
+          <span class="label">UTC</span>
+          <span class="mono" id="clock">--:--:--</span>
+        </div>
       </div>
-      <div class="hud-box clock-box">
-        <span class="label">UTC</span>
-        <span class="mono" id="clock">--:--:--</span>
+
+      <div class="hud-left hud-box">
+        <div class="panel-title">MOTION SENSOR</div>
+        <canvas id="gyroRadar" width="120" height="120"></canvas>
+        <div class="row"><span>PITCH</span><b class="mono" id="pitchVal">0.0&deg;</b></div>
+        <div class="row"><span>ROLL</span><b class="mono" id="rollVal">0.0&deg;</b></div>
+        <div class="row"><span>YAW</span><b class="mono" id="yawVal">0.0&deg;</b></div>
+        <div class="row"><span>SPEED</span><b class="mono" id="speedVal">0 u/s</b></div>
+        <button id="motionToggle" class="chip">enable motion look</button>
       </div>
-      <div class="hud-box hull-box">
-        <span class="label">HULL</span>
-        <span class="mono" id="hullValue">100</span>
-        <div class="bar"><div class="bar-fill" id="hullBar"></div></div>
+
+      <div class="hud-right hud-box">
+        <div class="panel-title">NEAREST BODY</div>
+        <div class="row"><span>BODY</span><b class="mono" id="tName">--</b></div>
+        <div class="row"><span>DIST (AU)</span><b class="mono" id="tAU">--</b></div>
+        <div class="row"><span>DIAM (KM)</span><b class="mono" id="tDiam">--</b></div>
+        <div class="row"><span>TEMP</span><b class="mono" id="tTemp">--</b></div>
+        <div class="row"><span>MOONS</span><b class="mono" id="tMoons">--</b></div>
+        <div class="row"><span>ORBIT PERIOD</span><b class="mono" id="tPeriod">--</b></div>
+        <div class="row"><span>RANGE</span><b class="mono" id="tRange">--</b></div>
       </div>
-      <div class="hud-box score-box">
-        <span class="label">SCORE</span>
-        <span class="mono" id="scoreValue">0</span>
+
+      <div class="hud-bottom hud-box">
+        <div class="panel-title">QUICK TRAVEL</div>
+        <div id="travelList" class="travel-list"></div>
       </div>
-      <div class="hud-box timer-box">
-        <span class="label">MISSION T-</span>
-        <span class="mono" id="timerValue">5:00</span>
+
+      <div class="reticle" id="reticle">
+        <svg viewBox="0 0 100 100" width="60" height="60">
+          <circle cx="50" cy="50" r="46" class="reticle-ring" />
+          <line x1="50" y1="6" x2="50" y2="20" class="reticle-tick" />
+          <line x1="50" y1="80" x2="50" y2="94" class="reticle-tick" />
+          <line x1="6" y1="50" x2="20" y2="50" class="reticle-tick" />
+          <line x1="80" y1="50" x2="94" y2="50" class="reticle-tick" />
+        </svg>
       </div>
+
+      <div class="flash" id="flash"></div>
+
+      <div class="touch-look" id="touchLook"></div>
+      <button class="thrust-btn" id="thrustBtn">THRUST</button>
+      <button class="boost-btn" id="boostBtn">BOOST</button>
     </div>
 
-    <div class="hud-left hud-box">
-      <div class="panel-title">MOTION SENSOR</div>
-      <canvas id="gyroRadar" width="120" height="120"></canvas>
-      <div class="row"><span>PITCH</span><b class="mono" id="pitchVal">0.0&deg;</b></div>
-      <div class="row"><span>ROLL</span><b class="mono" id="rollVal">0.0&deg;</b></div>
-      <div class="row"><span>YAW</span><b class="mono" id="yawVal">0.0&deg;</b></div>
-      <div class="row"><span>SPEED</span><b class="mono" id="speedVal">0 u/s</b></div>
-      <button id="motionToggle" class="chip">enable motion look</button>
+    <div class="overlay" id="overlay">
+      <h1>SOLAR EXPLORER</h1>
+      <p class="lede">Free-roam a physically-scaled model of the solar system, no objectives or timer &mdash; just fly. Real elliptical orbits (Kepler's laws), real axial tilts, real major moons, and a backdrop of the actual brightest stars at their real positions &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Use Quick Travel to jump straight to any planet.</p>
+      <div class="controls-grid">
+        <div><b>Desktop</b><br/>Mouse look (click to lock) &middot; W/S thrust &middot; A/D strafe &middot; Shift boost &middot; Space brake</div>
+        <div><b>Touch</b><br/>Drag right side to look &middot; hold THRUST &middot; hold BOOST</div>
+        <div><b>Motion</b><br/>Tilt your device to look around, like a handheld VR view &middot; works in portrait or landscape</div>
+      </div>
+      <button id="start" class="primary">Enter Free Roam</button>
     </div>
-
-    <div class="hud-right hud-box">
-      <div class="panel-title">TARGET TELEMETRY</div>
-      <div class="row"><span>BODY</span><b class="mono" id="tName">--</b></div>
-      <div class="row"><span>DIST (AU)</span><b class="mono" id="tAU">--</b></div>
-      <div class="row"><span>DIAM (KM)</span><b class="mono" id="tDiam">--</b></div>
-      <div class="row"><span>TEMP</span><b class="mono" id="tTemp">--</b></div>
-      <div class="row"><span>MOONS</span><b class="mono" id="tMoons">--</b></div>
-      <div class="row"><span>ORBIT PERIOD</span><b class="mono" id="tPeriod">--</b></div>
-      <div class="row"><span>RANGE</span><b class="mono" id="tRange">--</b></div>
-      <div class="row"><span>STATUS</span><b class="mono" id="tStatus">--</b></div>
-    </div>
-
-    <div class="hud-bottom hud-box">
-      <div class="panel-title">SCAN OBJECTIVES</div>
-      <div id="missionList" class="mission-list"></div>
-    </div>
-
-    <div class="reticle" id="reticle">
-      <svg viewBox="0 0 100 100" width="70" height="70">
-        <circle cx="50" cy="50" r="46" class="reticle-ring" />
-        <circle cx="50" cy="50" r="46" class="reticle-progress" id="reticleProgress" />
-        <line x1="50" y1="6" x2="50" y2="20" class="reticle-tick" />
-        <line x1="50" y1="80" x2="50" y2="94" class="reticle-tick" />
-        <line x1="6" y1="50" x2="20" y2="50" class="reticle-tick" />
-        <line x1="80" y1="50" x2="94" y2="50" class="reticle-tick" />
-      </svg>
-      <div class="reticle-label" id="reticleLabel"></div>
-    </div>
-
-    <div class="flash" id="flash"></div>
-
-    <div class="touch-look" id="touchLook"></div>
-    <button class="thrust-btn" id="thrustBtn">THRUST</button>
-    <button class="boost-btn" id="boostBtn">BOOST</button>
   </div>
-
-  <div class="overlay" id="overlay">
-    <h1>SOLAR EXPLORER</h1>
-    <p class="lede">Pilot a scan probe through a physically-scaled model of the solar system. Real elliptical orbits (Kepler's laws), real axial tilts, real major moons, and a backdrop of the actual brightest stars at their real positions &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Fly close to each planet and hold position to scan it. Avoid the asteroid belt between Mars and Jupiter &mdash; it damages your hull.</p>
-    <div class="controls-grid">
-      <div><b>Desktop</b><br/>Mouse look (click to lock) &middot; W/S thrust &middot; A/D strafe &middot; Shift boost &middot; Space brake</div>
-      <div><b>Touch</b><br/>Drag right side to look &middot; hold THRUST &middot; hold BOOST</div>
-      <div><b>Motion</b><br/>Tilt your device to look around, like a handheld VR view</div>
-    </div>
-    <button id="start" class="primary">Start Mission</button>
-    <div id="board"></div>
-    <p class="note">Runs fully on this device &mdash; scores are saved in this browser only, not shared with anyone else.</p>
-  </div>
-</div>
 
 <script id="three-src" type="application/octet-stream">/**
  * @license
@@ -526,10 +451,6 @@ const BRIGHT_STARS = [
 ];
 
 const SUN_RADIUS = 26;
-const SCAN_TIME = 1.2;
-const MISSION_SECONDS = 300;
-const ASTEROID_HIT_DAMAGE = 15;
-const ASTEROID_INVULN_S = 1.2;
 
 function sceneDistance(au) {
   return AU_UNIT * Math.sqrt(au);
@@ -875,9 +796,6 @@ const bodies = PLANETS.map((p) => {
   orbitLine.rotation.y = argPeriapsis;
   scene.add(orbitLine);
 
-  const tangentialSpeed = angularSpeed * orbitRadius;
-  const scanRange = Math.max(p.gameRadius * 3, tangentialSpeed * SCAN_TIME * 1.5);
-
   return {
     ...p,
     orbitRadius,
@@ -885,12 +803,9 @@ const bodies = PLANETS.map((p) => {
     angularSpeed,
     meanAnomaly,
     argPeriapsis,
-    scanRange,
     pivot,
     tiltGroup,
     mesh,
-    scanned: false,
-    scanProgress: 0,
   };
 });
 
@@ -961,7 +876,7 @@ const TOUCH_SENS = 0.0032;
 
 let pointerLocked = false;
 canvas.addEventListener('click', () => {
-  if (!gameRunning) return;
+  if (!roaming) return;
   if (!motionEnabled) canvas.requestPointerLock?.();
 });
 document.addEventListener('pointerlockchange', () => {
@@ -1070,36 +985,13 @@ motionToggle.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Game state
+// Free-roam state — no objectives, no timer, no fail state.
 // ---------------------------------------------------------------------------
-let gameRunning = false;
-let hull = 100;
-let score = 0;
-let timeLeft = MISSION_SECONDS;
-let asteroidCooldown = 0;
-let scannedCount = 0;
+let roaming = false;
 
 const overlay = document.getElementById('overlay');
 const flashEl = document.getElementById('flash');
-const missionListEl = document.getElementById('missionList');
-const reticleProgress = document.getElementById('reticleProgress');
-const reticleLabel = document.getElementById('reticleLabel');
-
-function fmtTime(s) {
-  const m = Math.floor(s / 60);
-  const sec = Math.max(0, Math.floor(s % 60));
-  return `${m}:${String(sec).padStart(2, '0')}`;
-}
-
-function renderMissionList() {
-  missionListEl.innerHTML = bodies.map((b) => `
-    <div class="m-row ${b.scanned ? 'done' : ''}">
-      <span class="m-name">${b.name}</span>
-      <span>${b.scanned ? 'SCANNED' : Math.round(b.au * 10 + 50) + ' pts'}</span>
-    </div>
-  `).join('');
-}
-renderMissionList();
+const travelListEl = document.getElementById('travelList');
 
 function flash(msg) {
   flashEl.textContent = msg;
@@ -1108,110 +1000,52 @@ function flash(msg) {
   flash._t = setTimeout(() => flashEl.classList.remove('show'), 1600);
 }
 
-function resetGame() {
-  hull = 100;
-  score = 0;
-  timeLeft = MISSION_SECONDS;
-  scannedCount = 0;
+function renderTravelList() {
+  const targets = [{ name: 'Sun' }, ...bodies];
+  travelListEl.innerHTML = targets.map((b) => `<button class="travel-btn" data-name="${b.name}">${b.name}</button>`).join('');
+  travelListEl.querySelectorAll('.travel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => travelTo(btn.dataset.name));
+  });
+}
+renderTravelList();
+
+// Places the ship a comfortable distance from the target, on its sunlit side,
+// looking straight at it — the camera is a real THREE.Camera so lookAt()
+// orients correctly (a plain Object3D would orient the opposite way).
+function travelTo(name) {
+  let p, radius;
+  if (name === 'Sun') {
+    p = new THREE.Vector3(0, 0, 0);
+    radius = SUN_RADIUS;
+  } else {
+    const b = bodies.find((x) => x.name === name);
+    if (!b) return;
+    p = new THREE.Vector3();
+    b.mesh.getWorldPosition(p);
+    radius = b.gameRadius;
+  }
+  const d = radius * 3.5;
+  const towardSun = name === 'Sun' ? new THREE.Vector3(1, 0, 0) : p.clone().negate().normalize();
+  const tangent = new THREE.Vector3(0, 1, 0).cross(towardSun).normalize();
+  camera.position.copy(p).addScaledVector(towardSun, d * 0.6).addScaledVector(tangent, d * 0.8);
+  camera.lookAt(p);
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  yaw = e.y;
+  pitch = e.x;
+  velocity.set(0, 0, 0);
+  flash(`WARPED TO ${name.toUpperCase()}`);
+}
+
+function enterFreeRoam() {
   velocity.set(0, 0, 0);
   yaw = -Math.PI / 2;
   pitch = -0.05;
   camera.position.set(sceneDistance(startAU), 6, 0);
-  for (const b of bodies) { b.scanned = false; b.scanProgress = 0; }
-  renderMissionList();
-  document.getElementById('hullValue').textContent = '100';
-  document.getElementById('hullBar').style.width = '100%';
-  document.getElementById('hullBar').style.background = '';
-  document.getElementById('scoreValue').textContent = '0';
-}
-
-function startMission() {
-  resetGame();
   overlay.classList.add('hidden');
-  gameRunning = true;
+  roaming = true;
 }
 
-function endMission(reason) {
-  gameRunning = false;
-  document.exitPointerLock?.();
-  overlay.classList.remove('hidden');
-  overlay.innerHTML = `
-    <h1>${reason}</h1>
-    <div class="summary">
-      <div><b id="sumScore">${score}</b>score</div>
-      <div><b>${scannedCount}/${bodies.length}</b>planets scanned</div>
-      <div><b>${fmtTime(MISSION_SECONDS - timeLeft)}</b>elapsed</div>
-    </div>
-    <div class="name-entry">
-      <input id="name" maxlength="16" placeholder="your name" autocomplete="off" />
-      <button id="submit">Save</button>
-    </div>
-    <p id="submit-error" class="error hidden"></p>
-    <div id="board"></div>
-    <button id="start" class="primary">Fly Again</button>
-  `;
-  document.getElementById('submit').addEventListener('click', submitScore);
-  document.getElementById('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitScore(); });
-  document.getElementById('start').addEventListener('click', startMission);
-  renderLeaderboard();
-}
-
-const STORAGE_KEY = 'solar-explorer-scores';
-
-function loadScores() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
-
-function saveScoreLocal(name, value) {
-  const scores = loadScores();
-  scores.push({ name: name.slice(0, 16), score: value, at: Date.now() });
-  scores.sort((a, b) => b.score - a.score);
-  scores.length = Math.min(scores.length, 50);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function submitScore() {
-  const nameInput = document.getElementById('name');
-  const submitBtn = document.getElementById('submit');
-  const errorEl = document.getElementById('submit-error');
-  const name = (nameInput.value || 'anon').trim() || 'anon';
-  errorEl.classList.add('hidden');
-
-  const saved = saveScoreLocal(name, score);
-  if (!saved) {
-    errorEl.textContent = "Couldn't save — this browser is blocking local storage (common in private browsing).";
-    errorEl.classList.remove('hidden');
-    return;
-  }
-  nameInput.disabled = true;
-  submitBtn.disabled = true;
-  renderLeaderboard();
-}
-
-function renderLeaderboard() {
-  const target = document.getElementById('board');
-  if (!target) return;
-  const scores = loadScores();
-  target.innerHTML = scores.slice(0, 8)
-    .map((s, i) => `<div class="row"><span>${i + 1}. ${escapeHTML(s.name)}</span><b>${s.score}</b></div>`)
-    .join('') || '<div class="row"><span>no scores yet</span></div>';
-}
-
-function escapeHTML(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-document.getElementById('start').addEventListener('click', startMission);
-renderLeaderboard();
+document.getElementById('start').addEventListener('click', enterFreeRoam);
 
 // ---------------------------------------------------------------------------
 // HUD helpers
@@ -1229,7 +1063,6 @@ function drawGyroRadar(p, r) {
   gyroCtx.beginPath(); gyroCtx.arc(x, y, 5, 0, Math.PI * 2); gyroCtx.fill();
 }
 
-let lastHudUpdate = 0;
 function updateHud(now, dt) {
   document.getElementById('clock').textContent = new Date().toISOString().slice(11, 19);
 
@@ -1242,14 +1075,7 @@ function updateHud(now, dt) {
   document.getElementById('speedVal').textContent = velocity.length().toFixed(0) + ' u/s';
   drawGyroRadar(pitchDeg, rollDeg);
 
-  document.getElementById('hullValue').textContent = Math.round(hull);
-  const hullBar = document.getElementById('hullBar');
-  hullBar.style.width = `${Math.max(0, hull)}%`;
-  hullBar.style.background = hull > 50 ? '' : hull > 20 ? '#e0b04a' : '#d65f6f';
-  document.getElementById('scoreValue').textContent = score;
-  document.getElementById('timerValue').textContent = fmtTime(timeLeft);
-
-  // nearest planet
+  // nearest planet — pure telemetry, no objective attached to it
   let nearest = null, nearestDist = Infinity;
   for (const b of bodies) {
     const worldPos = new THREE.Vector3();
@@ -1269,32 +1095,6 @@ function updateHud(now, dt) {
     const surfaceDist = Math.max(0, nearestDist - nearest.gameRadius);
     const kmPerUnit = nearest.diameterKm / (nearest.gameRadius * 2);
     document.getElementById('tRange').textContent = `${Math.round(surfaceDist * kmPerUnit).toLocaleString()} km`;
-    document.getElementById('tStatus').textContent = nearest.scanned ? 'SCANNED' : 'PENDING';
-  }
-
-  // scan reticle
-  const scanRange = nearest ? nearest.scanRange : 0;
-  if (nearest && !nearest.scanned && nearestDist < scanRange) {
-    nearest.scanProgress += dt;
-    const frac = Math.min(1, nearest.scanProgress / SCAN_TIME);
-    reticleProgress.style.strokeDashoffset = String(289 * (1 - frac));
-    reticleLabel.textContent = `SCANNING ${nearest.name}…`;
-    if (nearest.scanProgress >= SCAN_TIME) {
-      nearest.scanned = true;
-      scannedCount++;
-      const pts = Math.round(nearest.au * 10 + 50);
-      score += pts;
-      flash(`${nearest.name.toUpperCase()} SCANNED +${pts}`);
-      renderMissionList();
-      if (scannedCount === bodies.length) {
-        score += Math.round(timeLeft * 2);
-        endMission('ALL SCANS COMPLETE');
-      }
-    }
-  } else {
-    reticleProgress.style.strokeDashoffset = '289';
-    reticleLabel.textContent = nearest && nearest.scanned ? `${nearest.name} already scanned` : '';
-    if (nearest) nearest.scanProgress = Math.max(0, nearest.scanProgress - dt * 2);
   }
 }
 
@@ -1328,7 +1128,7 @@ function frame(ts) {
   }
   updateAsteroidMatrices();
 
-  if (gameRunning) {
+  if (roaming) {
     readKeyboard();
     const dir = input.forward !== 0 ? Math.sign(input.forward) : (touchThrust ? 1 : 0);
     const boosting = input.boost || touchBoost;
@@ -1361,30 +1161,6 @@ function frame(ts) {
       const radialSpeed = velocity.dot(normal);
       if (radialSpeed < 0) velocity.addScaledVector(normal, -radialSpeed);
     }
-
-    // Asteroid collisions
-    asteroidCooldown = Math.max(0, asteroidCooldown - dt);
-    if (asteroidCooldown <= 0) {
-      for (const a of asteroidData) {
-        const ax = Math.cos(a.theta) * a.r;
-        const az = Math.sin(a.theta) * a.r;
-        const dx = camera.position.x - ax;
-        const dy = camera.position.y - a.y;
-        const dz = camera.position.z - az;
-        const distSq = dx * dx + dy * dy + dz * dz;
-        const hitDist = 3 + a.scale;
-        if (distSq < hitDist * hitDist) {
-          hull -= ASTEROID_HIT_DAMAGE;
-          asteroidCooldown = ASTEROID_INVULN_S;
-          flash('HULL DAMAGE — ASTEROID IMPACT');
-          if (hull <= 0) { hull = 0; endMission('HULL BREACH — MISSION FAILED'); }
-          break;
-        }
-      }
-    }
-
-    timeLeft -= dt;
-    if (timeLeft <= 0) { timeLeft = 0; endMission('MISSION TIME EXPIRED'); }
 
     updateHud(ts, dt);
   }

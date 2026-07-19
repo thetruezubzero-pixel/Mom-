@@ -78,10 +78,6 @@ const BRIGHT_STARS = [
 ];
 
 const SUN_RADIUS = 26;
-const SCAN_TIME = 1.2;
-const MISSION_SECONDS = 300;
-const ASTEROID_HIT_DAMAGE = 15;
-const ASTEROID_INVULN_S = 1.2;
 
 function sceneDistance(au) {
   return AU_UNIT * Math.sqrt(au);
@@ -427,9 +423,6 @@ const bodies = PLANETS.map((p) => {
   orbitLine.rotation.y = argPeriapsis;
   scene.add(orbitLine);
 
-  const tangentialSpeed = angularSpeed * orbitRadius;
-  const scanRange = Math.max(p.gameRadius * 3, tangentialSpeed * SCAN_TIME * 1.5);
-
   return {
     ...p,
     orbitRadius,
@@ -437,12 +430,9 @@ const bodies = PLANETS.map((p) => {
     angularSpeed,
     meanAnomaly,
     argPeriapsis,
-    scanRange,
     pivot,
     tiltGroup,
     mesh,
-    scanned: false,
-    scanProgress: 0,
   };
 });
 
@@ -513,7 +503,7 @@ const TOUCH_SENS = 0.0032;
 
 let pointerLocked = false;
 canvas.addEventListener('click', () => {
-  if (!gameRunning) return;
+  if (!roaming) return;
   if (!motionEnabled) canvas.requestPointerLock?.();
 });
 document.addEventListener('pointerlockchange', () => {
@@ -622,36 +612,13 @@ motionToggle.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Game state
+// Free-roam state — no objectives, no timer, no fail state.
 // ---------------------------------------------------------------------------
-let gameRunning = false;
-let hull = 100;
-let score = 0;
-let timeLeft = MISSION_SECONDS;
-let asteroidCooldown = 0;
-let scannedCount = 0;
+let roaming = false;
 
 const overlay = document.getElementById('overlay');
 const flashEl = document.getElementById('flash');
-const missionListEl = document.getElementById('missionList');
-const reticleProgress = document.getElementById('reticleProgress');
-const reticleLabel = document.getElementById('reticleLabel');
-
-function fmtTime(s) {
-  const m = Math.floor(s / 60);
-  const sec = Math.max(0, Math.floor(s % 60));
-  return `${m}:${String(sec).padStart(2, '0')}`;
-}
-
-function renderMissionList() {
-  missionListEl.innerHTML = bodies.map((b) => `
-    <div class="m-row ${b.scanned ? 'done' : ''}">
-      <span class="m-name">${b.name}</span>
-      <span>${b.scanned ? 'SCANNED' : Math.round(b.au * 10 + 50) + ' pts'}</span>
-    </div>
-  `).join('');
-}
-renderMissionList();
+const travelListEl = document.getElementById('travelList');
 
 function flash(msg) {
   flashEl.textContent = msg;
@@ -660,100 +627,52 @@ function flash(msg) {
   flash._t = setTimeout(() => flashEl.classList.remove('show'), 1600);
 }
 
-function resetGame() {
-  hull = 100;
-  score = 0;
-  timeLeft = MISSION_SECONDS;
-  scannedCount = 0;
+function renderTravelList() {
+  const targets = [{ name: 'Sun' }, ...bodies];
+  travelListEl.innerHTML = targets.map((b) => `<button class="travel-btn" data-name="${b.name}">${b.name}</button>`).join('');
+  travelListEl.querySelectorAll('.travel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => travelTo(btn.dataset.name));
+  });
+}
+renderTravelList();
+
+// Places the ship a comfortable distance from the target, on its sunlit side,
+// looking straight at it — the camera is a real THREE.Camera so lookAt()
+// orients correctly (a plain Object3D would orient the opposite way).
+function travelTo(name) {
+  let p, radius;
+  if (name === 'Sun') {
+    p = new THREE.Vector3(0, 0, 0);
+    radius = SUN_RADIUS;
+  } else {
+    const b = bodies.find((x) => x.name === name);
+    if (!b) return;
+    p = new THREE.Vector3();
+    b.mesh.getWorldPosition(p);
+    radius = b.gameRadius;
+  }
+  const d = radius * 3.5;
+  const towardSun = name === 'Sun' ? new THREE.Vector3(1, 0, 0) : p.clone().negate().normalize();
+  const tangent = new THREE.Vector3(0, 1, 0).cross(towardSun).normalize();
+  camera.position.copy(p).addScaledVector(towardSun, d * 0.6).addScaledVector(tangent, d * 0.8);
+  camera.lookAt(p);
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  yaw = e.y;
+  pitch = e.x;
+  velocity.set(0, 0, 0);
+  flash(`WARPED TO ${name.toUpperCase()}`);
+}
+
+function enterFreeRoam() {
   velocity.set(0, 0, 0);
   yaw = -Math.PI / 2;
   pitch = -0.05;
   camera.position.set(sceneDistance(startAU), 6, 0);
-  for (const b of bodies) { b.scanned = false; b.scanProgress = 0; }
-  renderMissionList();
-  document.getElementById('hullValue').textContent = '100';
-  document.getElementById('hullBar').style.width = '100%';
-  document.getElementById('hullBar').style.background = '';
-  document.getElementById('scoreValue').textContent = '0';
-}
-
-function startMission() {
-  resetGame();
   overlay.classList.add('hidden');
-  gameRunning = true;
+  roaming = true;
 }
 
-function endMission(reason) {
-  gameRunning = false;
-  document.exitPointerLock?.();
-  overlay.classList.remove('hidden');
-  overlay.innerHTML = `
-    <h1>${reason}</h1>
-    <div class="summary">
-      <div><b id="sumScore">${score}</b>score</div>
-      <div><b>${scannedCount}/${bodies.length}</b>planets scanned</div>
-      <div><b>${fmtTime(MISSION_SECONDS - timeLeft)}</b>elapsed</div>
-    </div>
-    <div class="name-entry">
-      <input id="name" maxlength="16" placeholder="your name" autocomplete="off" />
-      <button id="submit">Save</button>
-    </div>
-    <p id="submit-error" class="error hidden"></p>
-    <div id="board"></div>
-    <button id="start" class="primary">Fly Again</button>
-  `;
-  document.getElementById('submit').addEventListener('click', submitScore);
-  document.getElementById('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitScore(); });
-  document.getElementById('start').addEventListener('click', startMission);
-  renderLeaderboard();
-}
-
-async function submitScore() {
-  const nameInput = document.getElementById('name');
-  const submitBtn = document.getElementById('submit');
-  const errorEl = document.getElementById('submit-error');
-  const name = (nameInput.value || 'anon').trim() || 'anon';
-  errorEl.classList.add('hidden');
-  submitBtn.disabled = true;
-  try {
-    const res = await fetch('/api/score', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, score }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `request failed (${res.status})`);
-    }
-    nameInput.disabled = true;
-    await renderLeaderboard();
-  } catch (err) {
-    submitBtn.disabled = false;
-    errorEl.textContent = `Couldn't save score: ${err.message}. Try again.`;
-    errorEl.classList.remove('hidden');
-  }
-}
-
-async function renderLeaderboard() {
-  const target = document.getElementById('board');
-  if (!target) return;
-  try {
-    const res = await fetch('/api/leaderboard');
-    const { scores } = await res.json();
-    target.innerHTML = scores.slice(0, 8)
-      .map((s, i) => `<div class="row"><span>${i + 1}. ${escapeHTML(s.name)}</span><b>${s.score}</b></div>`)
-      .join('') || '<div class="row"><span>no scores yet</span></div>';
-  } catch {
-    target.innerHTML = '<div class="row"><span>leaderboard unavailable</span></div>';
-  }
-}
-
-function escapeHTML(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-document.getElementById('start').addEventListener('click', startMission);
-renderLeaderboard();
+document.getElementById('start').addEventListener('click', enterFreeRoam);
 
 // ---------------------------------------------------------------------------
 // HUD helpers
@@ -771,7 +690,6 @@ function drawGyroRadar(p, r) {
   gyroCtx.beginPath(); gyroCtx.arc(x, y, 5, 0, Math.PI * 2); gyroCtx.fill();
 }
 
-let lastHudUpdate = 0;
 function updateHud(now, dt) {
   document.getElementById('clock').textContent = new Date().toISOString().slice(11, 19);
 
@@ -784,14 +702,7 @@ function updateHud(now, dt) {
   document.getElementById('speedVal').textContent = velocity.length().toFixed(0) + ' u/s';
   drawGyroRadar(pitchDeg, rollDeg);
 
-  document.getElementById('hullValue').textContent = Math.round(hull);
-  const hullBar = document.getElementById('hullBar');
-  hullBar.style.width = `${Math.max(0, hull)}%`;
-  hullBar.style.background = hull > 50 ? '' : hull > 20 ? '#e0b04a' : '#d65f6f';
-  document.getElementById('scoreValue').textContent = score;
-  document.getElementById('timerValue').textContent = fmtTime(timeLeft);
-
-  // nearest planet
+  // nearest planet — pure telemetry, no objective attached to it
   let nearest = null, nearestDist = Infinity;
   for (const b of bodies) {
     const worldPos = new THREE.Vector3();
@@ -811,32 +722,6 @@ function updateHud(now, dt) {
     const surfaceDist = Math.max(0, nearestDist - nearest.gameRadius);
     const kmPerUnit = nearest.diameterKm / (nearest.gameRadius * 2);
     document.getElementById('tRange').textContent = `${Math.round(surfaceDist * kmPerUnit).toLocaleString()} km`;
-    document.getElementById('tStatus').textContent = nearest.scanned ? 'SCANNED' : 'PENDING';
-  }
-
-  // scan reticle
-  const scanRange = nearest ? nearest.scanRange : 0;
-  if (nearest && !nearest.scanned && nearestDist < scanRange) {
-    nearest.scanProgress += dt;
-    const frac = Math.min(1, nearest.scanProgress / SCAN_TIME);
-    reticleProgress.style.strokeDashoffset = String(289 * (1 - frac));
-    reticleLabel.textContent = `SCANNING ${nearest.name}…`;
-    if (nearest.scanProgress >= SCAN_TIME) {
-      nearest.scanned = true;
-      scannedCount++;
-      const pts = Math.round(nearest.au * 10 + 50);
-      score += pts;
-      flash(`${nearest.name.toUpperCase()} SCANNED +${pts}`);
-      renderMissionList();
-      if (scannedCount === bodies.length) {
-        score += Math.round(timeLeft * 2);
-        endMission('ALL SCANS COMPLETE');
-      }
-    }
-  } else {
-    reticleProgress.style.strokeDashoffset = '289';
-    reticleLabel.textContent = nearest && nearest.scanned ? `${nearest.name} already scanned` : '';
-    if (nearest) nearest.scanProgress = Math.max(0, nearest.scanProgress - dt * 2);
   }
 }
 
@@ -870,7 +755,7 @@ function frame(ts) {
   }
   updateAsteroidMatrices();
 
-  if (gameRunning) {
+  if (roaming) {
     readKeyboard();
     const dir = input.forward !== 0 ? Math.sign(input.forward) : (touchThrust ? 1 : 0);
     const boosting = input.boost || touchBoost;
@@ -903,30 +788,6 @@ function frame(ts) {
       const radialSpeed = velocity.dot(normal);
       if (radialSpeed < 0) velocity.addScaledVector(normal, -radialSpeed);
     }
-
-    // Asteroid collisions
-    asteroidCooldown = Math.max(0, asteroidCooldown - dt);
-    if (asteroidCooldown <= 0) {
-      for (const a of asteroidData) {
-        const ax = Math.cos(a.theta) * a.r;
-        const az = Math.sin(a.theta) * a.r;
-        const dx = camera.position.x - ax;
-        const dy = camera.position.y - a.y;
-        const dz = camera.position.z - az;
-        const distSq = dx * dx + dy * dy + dz * dz;
-        const hitDist = 3 + a.scale;
-        if (distSq < hitDist * hitDist) {
-          hull -= ASTEROID_HIT_DAMAGE;
-          asteroidCooldown = ASTEROID_INVULN_S;
-          flash('HULL DAMAGE — ASTEROID IMPACT');
-          if (hull <= 0) { hull = 0; endMission('HULL BREACH — MISSION FAILED'); }
-          break;
-        }
-      }
-    }
-
-    timeLeft -= dt;
-    if (timeLeft <= 0) { timeLeft = 0; endMission('MISSION TIME EXPIRED'); }
 
     updateHud(ts, dt);
   }

@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="mobile-web-app-capable" content="yes" />
+<meta name="screen-orientation" content="auto" />
 <title>solar explorer</title>
 <link rel="stylesheet" href="/style.css" />
 </head>
@@ -17,24 +18,11 @@
       <div class="hud-top">
         <div class="hud-box title-box">
           <span class="title">SOLAR EXPLORER</span>
-          <span class="subtitle">flight sim &middot; live scan mission</span>
+          <span class="subtitle">free-roam solar system flight sim</span>
         </div>
         <div class="hud-box clock-box">
           <span class="label">UTC</span>
           <span class="mono" id="clock">--:--:--</span>
-        </div>
-        <div class="hud-box hull-box">
-          <span class="label">HULL</span>
-          <span class="mono" id="hullValue">100</span>
-          <div class="bar"><div class="bar-fill" id="hullBar"></div></div>
-        </div>
-        <div class="hud-box score-box">
-          <span class="label">SCORE</span>
-          <span class="mono" id="scoreValue">0</span>
-        </div>
-        <div class="hud-box timer-box">
-          <span class="label">MISSION T-</span>
-          <span class="mono" id="timerValue">5:00</span>
         </div>
       </div>
 
@@ -49,7 +37,7 @@
       </div>
 
       <div class="hud-right hud-box">
-        <div class="panel-title">TARGET TELEMETRY</div>
+        <div class="panel-title">NEAREST BODY</div>
         <div class="row"><span>BODY</span><b class="mono" id="tName">--</b></div>
         <div class="row"><span>DIST (AU)</span><b class="mono" id="tAU">--</b></div>
         <div class="row"><span>DIAM (KM)</span><b class="mono" id="tDiam">--</b></div>
@@ -57,24 +45,21 @@
         <div class="row"><span>MOONS</span><b class="mono" id="tMoons">--</b></div>
         <div class="row"><span>ORBIT PERIOD</span><b class="mono" id="tPeriod">--</b></div>
         <div class="row"><span>RANGE</span><b class="mono" id="tRange">--</b></div>
-        <div class="row"><span>STATUS</span><b class="mono" id="tStatus">--</b></div>
       </div>
 
       <div class="hud-bottom hud-box">
-        <div class="panel-title">SCAN OBJECTIVES</div>
-        <div id="missionList" class="mission-list"></div>
+        <div class="panel-title">QUICK TRAVEL</div>
+        <div id="travelList" class="travel-list"></div>
       </div>
 
       <div class="reticle" id="reticle">
-        <svg viewBox="0 0 100 100" width="70" height="70">
+        <svg viewBox="0 0 100 100" width="60" height="60">
           <circle cx="50" cy="50" r="46" class="reticle-ring" />
-          <circle cx="50" cy="50" r="46" class="reticle-progress" id="reticleProgress" />
           <line x1="50" y1="6" x2="50" y2="20" class="reticle-tick" />
           <line x1="50" y1="80" x2="50" y2="94" class="reticle-tick" />
           <line x1="6" y1="50" x2="20" y2="50" class="reticle-tick" />
           <line x1="80" y1="50" x2="94" y2="50" class="reticle-tick" />
         </svg>
-        <div class="reticle-label" id="reticleLabel"></div>
       </div>
 
       <div class="flash" id="flash"></div>
@@ -86,15 +71,13 @@
 
     <div class="overlay" id="overlay">
       <h1>SOLAR EXPLORER</h1>
-      <p class="lede">Pilot a scan probe through a physically-scaled model of the solar system. Real elliptical orbits (Kepler's laws), real axial tilts, real major moons, and a backdrop of the actual brightest stars at their real positions &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Fly close to each planet and hold position to scan it. Avoid the asteroid belt between Mars and Jupiter &mdash; it damages your hull.</p>
+      <p class="lede">Free-roam a physically-scaled model of the solar system, no objectives or timer &mdash; just fly. Real elliptical orbits (Kepler's laws), real axial tilts, real major moons, and a backdrop of the actual brightest stars at their real positions &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Use Quick Travel to jump straight to any planet.</p>
       <div class="controls-grid">
         <div><b>Desktop</b><br/>Mouse look (click to lock) &middot; W/S thrust &middot; A/D strafe &middot; Shift boost &middot; Space brake</div>
         <div><b>Touch</b><br/>Drag right side to look &middot; hold THRUST &middot; hold BOOST</div>
-        <div><b>Motion</b><br/>Tilt your device to look around, like a handheld VR view</div>
+        <div><b>Motion</b><br/>Tilt your device to look around, like a handheld VR view &middot; works in portrait or landscape</div>
       </div>
-      <button id="start" class="primary">Start Mission</button>
-      <div id="board"></div>
-      <p class="note">Scores sync to the shared leaderboard on this server.</p>
+      <button id="start" class="primary">Enter Free Roam</button>
     </div>
   </div>
 

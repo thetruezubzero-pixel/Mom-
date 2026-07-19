@@ -5,8 +5,6 @@
   --ink-dim: #7fa39c;
   --line: rgba(95, 214, 200, 0.28);
   --signal: #5fd6c8;
-  --noise: #d65f6f;
-  --amber: #e0b04a;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -41,7 +39,7 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
 }
@@ -64,32 +62,18 @@ body {
 .title-box { flex: 1 1 160px; }
 .title-box .title { color: var(--signal); font-weight: 700; letter-spacing: 0.04em; font-size: 14px; display: block; }
 .title-box .subtitle { color: var(--ink-dim); font-size: 10px; }
-.clock-box, .hull-box, .score-box, .timer-box { min-width: 78px; }
+.clock-box { min-width: 78px; }
 .hud-top .mono { font-size: 15px; }
-
-.bar {
-  margin-top: 3px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255,255,255,0.12);
-  overflow: hidden;
-}
-.bar-fill {
-  height: 100%;
-  width: 100%;
-  background: var(--signal);
-  transition: width 0.2s, background 0.2s;
-}
 
 .hud-left, .hud-right {
   position: absolute;
-  top: 70px;
+  top: 66px;
   width: 168px;
   font-size: 11px;
   pointer-events: auto;
 }
-.hud-left { left: 10px; }
-.hud-right { right: 10px; }
+.hud-left { left: max(10px, env(safe-area-inset-left)); }
+.hud-right { right: max(10px, env(safe-area-inset-right)); }
 
 .panel-title {
   color: var(--signal);
@@ -131,54 +115,41 @@ body {
 
 .hud-bottom {
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: max(10px, env(safe-area-inset-left));
+  right: max(10px, env(safe-area-inset-right));
   bottom: max(10px, env(safe-area-inset-bottom));
-  max-height: 30dvh;
+  max-height: 26dvh;
   overflow-y: auto;
   pointer-events: auto;
   font-size: 11px;
 }
-.mission-list .m-row {
+
+.travel-list {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 0;
-  color: var(--ink-dim);
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.mission-list .m-row.done { color: var(--signal); }
-.mission-list .m-row.done .m-name::before { content: "\2713 "; }
-.mission-list .m-row .m-name::before { content: "\25CB "; }
+.travel-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(95,214,200,0.08);
+  color: var(--ink);
+  pointer-events: auto;
+}
+.travel-btn:active { background: var(--signal); color: #05201c; }
 
 .reticle {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  pointer-events: none;
 }
 .reticle-ring { fill: none; stroke: rgba(255,255,255,0.25); stroke-width: 2; }
-.reticle-progress {
-  fill: none;
-  stroke: var(--signal);
-  stroke-width: 4;
-  stroke-linecap: round;
-  transform-origin: 50px 50px;
-  transform: rotate(-90deg);
-  stroke-dasharray: 289;
-  stroke-dashoffset: 289;
-  transition: stroke-dashoffset 0.1s linear;
-}
 .reticle-tick { stroke: rgba(255,255,255,0.4); stroke-width: 2; }
-.reticle-label {
-  font-size: 10px;
-  color: var(--signal);
-  text-shadow: 0 0 6px rgba(0,0,0,0.8);
-  min-height: 12px;
-}
 
 .flash {
   position: absolute;
@@ -216,13 +187,42 @@ body {
   font-size: 11px;
   letter-spacing: 0.05em;
 }
-.thrust-btn { left: 14px; width: 92px; height: 92px; }
-.boost-btn { left: 116px; width: 60px; height: 60px; bottom: max(24px, env(safe-area-inset-bottom)); }
+.thrust-btn { left: max(14px, env(safe-area-inset-left)); width: 92px; height: 92px; }
+.boost-btn { left: calc(max(14px, env(safe-area-inset-left)) + 102px); width: 60px; height: 60px; bottom: max(24px, env(safe-area-inset-bottom)); }
 .thrust-btn:active, .boost-btn:active { background: var(--signal); color: #05201c; }
 
-@media (min-width: 720px) {
+/* Touch controls are keyed off input capability, not screen width — a phone
+   rotated to landscape is often wider than 720px but is still a touchscreen. */
+@media (hover: hover) and (pointer: fine) {
   .thrust-btn, .boost-btn, .touch-look { display: none; }
+}
+@media (min-width: 720px) {
   .hud-left, .hud-right { width: 200px; }
+}
+
+/* On touch devices the thrust/boost buttons sit bottom-left; give the
+   full-width quick-travel panel enough clearance so it never overlaps them. */
+@media (hover: none) {
+  .hud-bottom { bottom: 130px; max-height: 22dvh; }
+}
+
+/* Landscape phones: shorter viewport height, so keep side panels compact
+   and out of the way of the thrust/boost buttons and reticle. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .hud-top { font-size: 10px; }
+  .hud-top .mono { font-size: 13px; }
+  .hud-left, .hud-right {
+    top: 50px;
+    max-height: 72dvh;
+    overflow-y: auto;
+    width: 150px;
+  }
+  .hud-bottom { max-height: 34dvh; }
+  .thrust-btn { width: 72px; height: 72px; }
+  .boost-btn { width: 48px; height: 48px; left: calc(max(14px, env(safe-area-inset-left)) + 82px); }
+  .overlay { padding: 14px; gap: 8px; }
+  .overlay h1 { font-size: 20px; }
+  .overlay .lede { font-size: 12px; }
 }
 
 .overlay {
@@ -280,61 +280,3 @@ body {
   font-weight: 700;
 }
 .overlay button.primary:active { opacity: 0.85; }
-.overlay button:disabled { opacity: 0.5; }
-
-.summary {
-  display: flex;
-  gap: 18px;
-  flex-wrap: wrap;
-  justify-content: center;
-  font-size: 12px;
-  color: var(--ink-dim);
-}
-.summary b { color: var(--ink); font-size: 16px; display: block; }
-
-.error {
-  color: var(--noise);
-  font-size: 12px;
-  max-width: 260px;
-  margin: 0;
-}
-.error.hidden { display: none; }
-
-#board {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--ink-dim);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  max-width: 280px;
-}
-#board .row { display: flex; justify-content: space-between; gap: 8px; }
-#board .row b { color: var(--ink); }
-
-.name-entry {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-.name-entry input {
-  font-family: inherit;
-  font-size: 14px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,0.04);
-  color: var(--ink);
-  width: 150px;
-}
-.name-entry button {
-  font-family: inherit;
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: none;
-  background: var(--signal);
-  color: #05201c;
-}
-
-.note { color: var(--ink-dim); font-size: 11px; max-width: 280px; }
