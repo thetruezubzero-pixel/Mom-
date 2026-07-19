@@ -1,0 +1,404 @@
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>signal catcher</title>
+<style>
+  :root {
+    --bg: #0f1416;
+    --surface: #171f22;
+    --ink: #e8ecec;
+    --ink-dim: #8b969b;
+    --line: #2a3336;
+    --signal: #5fd6c8;
+    --noise: #d65f6f;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  header {
+    width: 100%;
+    max-width: 400px;
+    padding: max(14px, env(safe-area-inset-top)) 16px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .title {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .hud {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    color: var(--ink-dim);
+    display: flex;
+    gap: 14px;
+  }
+  .hud b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  main {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+
+  canvas {
+    background: var(--surface);
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    touch-action: none;
+    max-width: 92vw;
+    max-height: 68vh;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 20px;
+    background: rgba(15, 20, 22, 0.88);
+    overflow-y: auto;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 22px;
+    margin: 0;
+  }
+  .overlay p {
+    color: var(--ink-dim);
+    font-size: 14px;
+    max-width: 280px;
+    margin: 0;
+  }
+  .overlay button {
+    margin-top: 8px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 14px;
+    padding: 10px 24px;
+    border-radius: 999px;
+    border: none;
+    background: var(--signal);
+    color: #05201c;
+  }
+  .overlay button:active { opacity: 0.85; }
+  .overlay button:disabled { opacity: 0.5; }
+
+  .error {
+    color: var(--noise);
+    font-size: 12px;
+    max-width: 260px;
+    margin: 0;
+  }
+  .error.hidden { display: none; }
+
+  #board {
+    margin-top: 14px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    color: var(--ink-dim);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    max-width: 260px;
+  }
+  #board .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  #board .row b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .name-entry {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .name-entry input {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    width: 140px;
+  }
+  .name-entry button {
+    margin-top: 0;
+    padding: 8px 16px;
+  }
+
+  .note {
+    color: var(--ink-dim);
+    font-size: 11px;
+    max-width: 260px;
+  }
+</style>
+
+<header>
+  <div class="title">signal catcher</div>
+  <div class="hud">
+    <span>score <b id="score">0</b></span>
+    <span>time <b id="time">60</b></span>
+  </div>
+</header>
+
+<main>
+  <canvas id="game" width="360" height="560"></canvas>
+  <div id="overlay" class="overlay">
+    <h1>signal catcher</h1>
+    <p>Catch the cyan signals. Avoid the red noise. Drag or use arrow keys.</p>
+    <button id="start">Start</button>
+    <div id="board"></div>
+    <p class="note">Runs fully on this device &mdash; scores are saved in this browser only, not shared with anyone else.</p>
+  </div>
+</main>
+
+<script>
+  (() => {
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const timeEl = document.getElementById('time');
+    const overlay = document.getElementById('overlay');
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const ROUND_SECONDS = 60;
+    const STORAGE_KEY = 'signal-catcher-scores';
+
+    const paddle = { w: 70, h: 10, x: (W - 70) / 2, y: H - 30 };
+    let drops = [];
+    let score = 0;
+    let timeLeft = ROUND_SECONDS;
+    let running = false;
+    let lastSpawn = 0;
+    let lastTick = 0;
+    let rafId = null;
+    let tickInterval = null;
+
+    function loadScores() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveScore(name, value) {
+      const scores = loadScores();
+      scores.push({ name: name.slice(0, 16), score: value, at: Date.now() });
+      scores.sort((a, b) => b.score - a.score);
+      scores.length = Math.min(scores.length, 50);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
+        return { scores, saved: true };
+      } catch {
+        return { scores, saved: false };
+      }
+    }
+
+    function resetState() {
+      drops = [];
+      score = 0;
+      timeLeft = ROUND_SECONDS;
+      paddle.x = (W - paddle.w) / 2;
+      scoreEl.textContent = '0';
+      timeEl.textContent = String(ROUND_SECONDS);
+    }
+
+    function spawnDrop() {
+      const isNoise = Math.random() < 0.28;
+      drops.push({
+        x: Math.random() * (W - 16) + 8,
+        y: -10,
+        r: 8,
+        speed: 90 + Math.random() * 90 + (ROUND_SECONDS - timeLeft) * 1.2,
+        noise: isNoise,
+      });
+    }
+
+    function movePaddleTo(clientX) {
+      const rect = canvas.getBoundingClientRect();
+      const scale = W / rect.width;
+      const x = (clientX - rect.left) * scale;
+      paddle.x = Math.min(W - paddle.w, Math.max(0, x - paddle.w / 2));
+    }
+
+    canvas.addEventListener('pointerdown', (e) => movePaddleTo(e.clientX));
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.buttons === 1 || e.pointerType === 'touch') movePaddleTo(e.clientX);
+    });
+
+    const keys = new Set();
+    window.addEventListener('keydown', (e) => keys.add(e.key));
+    window.addEventListener('keyup', (e) => keys.delete(e.key));
+    window.addEventListener('blur', () => keys.clear());
+
+    function update(dt) {
+      if (keys.has('ArrowLeft')) paddle.x = Math.max(0, paddle.x - 260 * dt);
+      if (keys.has('ArrowRight')) paddle.x = Math.min(W - paddle.w, paddle.x + 260 * dt);
+
+      lastSpawn += dt;
+      const spawnEvery = Math.max(0.35, 0.9 - (ROUND_SECONDS - timeLeft) * 0.01);
+      if (lastSpawn > spawnEvery) {
+        lastSpawn = 0;
+        spawnDrop();
+      }
+
+      for (const drop of drops) {
+        drop.y += drop.speed * dt;
+      }
+
+      const paddleTop = paddle.y;
+      drops = drops.filter((drop) => {
+        const caught =
+          drop.y + drop.r >= paddleTop &&
+          drop.y - drop.r <= paddle.y + paddle.h &&
+          drop.x >= paddle.x - drop.r &&
+          drop.x <= paddle.x + paddle.w + drop.r;
+
+        if (caught) {
+          score += drop.noise ? -5 : 10;
+          score = Math.max(0, score);
+          scoreEl.textContent = String(score);
+          return false;
+        }
+        return drop.y - drop.r < H;
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      ctx.fillStyle = '#e8ecec';
+      ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+
+      for (const drop of drops) {
+        ctx.beginPath();
+        ctx.arc(drop.x, drop.y, drop.r, 0, Math.PI * 2);
+        ctx.fillStyle = drop.noise ? '#d65f6f' : '#5fd6c8';
+        ctx.fill();
+      }
+    }
+
+    function loop(ts) {
+      if (!running) return;
+      if (!lastTick) lastTick = ts;
+      const dt = Math.min(0.05, (ts - lastTick) / 1000);
+      lastTick = ts;
+
+      update(dt);
+      draw();
+
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function startRound() {
+      resetState();
+      overlay.classList.add('hidden');
+      running = true;
+      lastTick = 0;
+      rafId = requestAnimationFrame(loop);
+
+      tickInterval = setInterval(() => {
+        timeLeft -= 1;
+        timeEl.textContent = String(Math.max(0, timeLeft));
+        if (timeLeft <= 0) endRound();
+      }, 1000);
+    }
+
+    function endRound() {
+      running = false;
+      cancelAnimationFrame(rafId);
+      clearInterval(tickInterval);
+
+      overlay.classList.remove('hidden');
+      overlay.innerHTML = `
+        <h1>signal caught</h1>
+        <p>Final score: <b>${score}</b></p>
+        <div class="name-entry">
+          <input id="name" maxlength="16" placeholder="your name" autocomplete="off" />
+          <button id="submit">Save</button>
+        </div>
+        <p id="submit-error" class="error hidden"></p>
+        <div id="board"></div>
+        <p class="note">Saved to this device only.</p>
+        <button id="start">Play again</button>
+      `;
+
+      document.getElementById('submit').addEventListener('click', submitScore);
+      document.getElementById('name').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submitScore();
+      });
+
+      renderLeaderboard();
+    }
+
+    function submitScore() {
+      const nameInput = document.getElementById('name');
+      const submitBtn = document.getElementById('submit');
+      const errorEl = document.getElementById('submit-error');
+      const name = (nameInput.value || 'anon').trim() || 'anon';
+
+      const { saved } = saveScore(name, score);
+
+      if (!saved) {
+        errorEl.textContent = "Couldn't save — this browser is blocking local storage (common in private browsing).";
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
+      nameInput.disabled = true;
+      submitBtn.disabled = true;
+      renderLeaderboard();
+    }
+
+    function renderLeaderboard() {
+      const target = document.getElementById('board');
+      if (!target) return;
+      const scores = loadScores();
+      target.innerHTML = scores
+        .slice(0, 8)
+        .map((s, i) => `<div class="row"><span>${i + 1}. ${escapeHTML(s.name)}</span><b>${s.score}</b></div>`)
+        .join('') || '<div class="row"><span>no scores yet</span></div>';
+    }
+
+    function escapeHTML(s) {
+      return s.replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target.id === 'start') startRound();
+    });
+    renderLeaderboard();
+  })();
+</script>
