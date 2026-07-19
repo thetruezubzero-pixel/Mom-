@@ -1262,14 +1262,23 @@ const earthLockState = {
   minDistance: earth.gameRadius * 1.35,
   maxDistance: earth.gameRadius * 18,
 };
+const EARTH_SCALE_MAX_KM = 1e12;
 const EARTH_SCALE_LAYERS = [
-  { key: 'solar', label: 'Solar / galactic context', hudLabel: 'SOLAR', minKm: 300000, maxKm: Infinity, sourceKeys: [] },
+  { key: 'solar', label: 'Solar / galactic context', hudLabel: 'SOLAR', minKm: 300000, maxKm: EARTH_SCALE_MAX_KM, sourceKeys: [] },
   { key: 'orbital', label: 'Orbital / satellite', hudLabel: 'ORBITAL', minKm: 25000, maxKm: 300000, sourceKeys: ['iss', 'maps'] },
   { key: 'atmosphere', label: 'Atmosphere / weather', hudLabel: 'ATMOS', minKm: 2500, maxKm: 25000, sourceKeys: ['maps'] },
   { key: 'geography', label: 'Continent / country / city', hudLabel: 'MAP', minKm: 150, maxKm: 2500, sourceKeys: ['maps'] },
   { key: 'transport', label: 'Transport / infrastructure', hudLabel: 'OPS', minKm: 10, maxKm: 150, sourceKeys: ['flights', 'maritime', 'freight', 'iot'] },
   { key: 'local', label: 'Local geology / population', hudLabel: 'LOCAL', minKm: 0, maxKm: 10, sourceKeys: ['iot'] },
 ];
+const READINESS_META = {
+  live: { label: 'LIVE', className: 'live' },
+  stale: { label: 'STALE', className: 'stale' },
+  connecting: { label: 'CONNECTING', className: 'connecting' },
+  needs_key: { label: 'NEEDS KEY', className: 'needs-key' },
+  simulated: { label: 'SIMULATED', className: 'simulated' },
+  static: { label: 'STATIC', className: 'static' },
+};
 let lastEarthScaleMarkup = '';
 
 const overlay = document.getElementById('overlay');
@@ -1347,7 +1356,7 @@ function renderEarthScaleStatus() {
   const markup = EARTH_SCALE_LAYERS.map((layer) => {
     const active = layer.key === activeLayer.key;
     const readiness = layerReadinessBadge(layer.sourceKeys);
-    const readinessLabel = readiness === 'needs_key' ? 'NEEDS KEY' : readiness.toUpperCase().replace(/_/g, ' ');
+    const readinessMeta = READINESS_META[readiness] || READINESS_META.simulated;
     const detail = layer.sourceKeys.length
       ? `depends on ${layer.sourceKeys.map((key) => dataSources[key]?.label || key).join(' + ')}`
       : 'uses the static starfield + planetary simulation';
@@ -1356,7 +1365,7 @@ function renderEarthScaleStatus() {
         <span>${layer.label}<small class="source-detail">${detail}</small></span>
         <span class="status-stack">
           <b class="badge ${active ? 'badge-active' : 'badge-standby'}">${active ? 'ACTIVE' : 'READY'}</b>
-          <b class="badge badge-${readiness.replace(/_/g, '-')}">${readinessLabel}</b>
+          <b class="badge badge-${readinessMeta.className}">${readinessMeta.label}</b>
         </span>
       </div>
     `;
