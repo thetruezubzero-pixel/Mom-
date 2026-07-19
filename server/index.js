@@ -12,6 +12,7 @@ app.use(logger);
 app.use(player);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/vendor/three.module.js', express.static(path.join(__dirname, '..', 'node_modules', 'three', 'build', 'three.module.js')));
 
 app.get('/api/leaderboard', (req, res) => {
   res.json({ scores: topScores() });
@@ -32,5 +33,5 @@ app.post('/api/score', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`signal-catcher listening on http://localhost:${PORT}`);
+  console.log(`solar-explorer listening on http://localhost:${PORT}`);
 });

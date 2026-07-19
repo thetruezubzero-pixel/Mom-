@@ -3,28 +3,101 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>signal catcher</title>
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>solar explorer</title>
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <header>
-    <div class="title">signal catcher</div>
+  <div id="app">
+    <canvas id="scene"></canvas>
+
     <div class="hud">
-      <span>score <b id="score">0</b></span>
-      <span>time <b id="time">60</b></span>
-    </div>
-  </header>
+      <div class="hud-top">
+        <div class="hud-box title-box">
+          <span class="title">SOLAR EXPLORER</span>
+          <span class="subtitle">flight sim &middot; live scan mission</span>
+        </div>
+        <div class="hud-box clock-box">
+          <span class="label">UTC</span>
+          <span class="mono" id="clock">--:--:--</span>
+        </div>
+        <div class="hud-box hull-box">
+          <span class="label">HULL</span>
+          <span class="mono" id="hullValue">100</span>
+          <div class="bar"><div class="bar-fill" id="hullBar"></div></div>
+        </div>
+        <div class="hud-box score-box">
+          <span class="label">SCORE</span>
+          <span class="mono" id="scoreValue">0</span>
+        </div>
+        <div class="hud-box timer-box">
+          <span class="label">MISSION T-</span>
+          <span class="mono" id="timerValue">5:00</span>
+        </div>
+      </div>
 
-  <main>
-    <canvas id="game" width="360" height="560"></canvas>
-    <div id="overlay" class="overlay">
-      <h1>signal catcher</h1>
-      <p>Catch the cyan signals. Avoid the red noise. Drag or use arrow keys.</p>
-      <button id="start">Start</button>
+      <div class="hud-left hud-box">
+        <div class="panel-title">MOTION SENSOR</div>
+        <canvas id="gyroRadar" width="120" height="120"></canvas>
+        <div class="row"><span>PITCH</span><b class="mono" id="pitchVal">0.0&deg;</b></div>
+        <div class="row"><span>ROLL</span><b class="mono" id="rollVal">0.0&deg;</b></div>
+        <div class="row"><span>YAW</span><b class="mono" id="yawVal">0.0&deg;</b></div>
+        <div class="row"><span>SPEED</span><b class="mono" id="speedVal">0 u/s</b></div>
+        <button id="motionToggle" class="chip">enable motion look</button>
+      </div>
+
+      <div class="hud-right hud-box">
+        <div class="panel-title">TARGET TELEMETRY</div>
+        <div class="row"><span>BODY</span><b class="mono" id="tName">--</b></div>
+        <div class="row"><span>DIST (AU)</span><b class="mono" id="tAU">--</b></div>
+        <div class="row"><span>DIAM (KM)</span><b class="mono" id="tDiam">--</b></div>
+        <div class="row"><span>TEMP</span><b class="mono" id="tTemp">--</b></div>
+        <div class="row"><span>MOONS</span><b class="mono" id="tMoons">--</b></div>
+        <div class="row"><span>ORBIT PERIOD</span><b class="mono" id="tPeriod">--</b></div>
+        <div class="row"><span>RANGE</span><b class="mono" id="tRange">--</b></div>
+        <div class="row"><span>STATUS</span><b class="mono" id="tStatus">--</b></div>
+      </div>
+
+      <div class="hud-bottom hud-box">
+        <div class="panel-title">SCAN OBJECTIVES</div>
+        <div id="missionList" class="mission-list"></div>
+      </div>
+
+      <div class="reticle" id="reticle">
+        <svg viewBox="0 0 100 100" width="70" height="70">
+          <circle cx="50" cy="50" r="46" class="reticle-ring" />
+          <circle cx="50" cy="50" r="46" class="reticle-progress" id="reticleProgress" />
+          <line x1="50" y1="6" x2="50" y2="20" class="reticle-tick" />
+          <line x1="50" y1="80" x2="50" y2="94" class="reticle-tick" />
+          <line x1="6" y1="50" x2="20" y2="50" class="reticle-tick" />
+          <line x1="80" y1="50" x2="94" y2="50" class="reticle-tick" />
+        </svg>
+        <div class="reticle-label" id="reticleLabel"></div>
+      </div>
+
+      <div class="flash" id="flash"></div>
+
+      <div class="touch-look" id="touchLook"></div>
+      <button class="thrust-btn" id="thrustBtn">THRUST</button>
+      <button class="boost-btn" id="boostBtn">BOOST</button>
+    </div>
+
+    <div class="overlay" id="overlay">
+      <h1>SOLAR EXPLORER</h1>
+      <p class="lede">Pilot a scan probe through a physically-scaled model of the solar system. Fly close to each planet and hold position to complete a scan. Real orbital mechanics (Kepler's third law) drive every planet's motion &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Avoid the asteroid belt between Mars and Jupiter &mdash; it damages your hull.</p>
+      <div class="controls-grid">
+        <div><b>Desktop</b><br/>Mouse look (click to lock) &middot; W/S thrust &middot; A/D strafe &middot; Shift boost &middot; Space brake</div>
+        <div><b>Touch</b><br/>Drag right side to look &middot; hold THRUST &middot; hold BOOST</div>
+        <div><b>Motion</b><br/>Tilt your device to look around, like a handheld VR view</div>
+      </div>
+      <button id="start" class="primary">Start Mission</button>
       <div id="board"></div>
+      <p class="note">Scores sync to the shared leaderboard on this server.</p>
     </div>
-  </main>
+  </div>
 
-  <script src="/game.js"></script>
+  <script type="module" src="/game.js"></script>
 </body>
 </html>
