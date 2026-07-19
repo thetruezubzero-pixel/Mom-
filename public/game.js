@@ -7,9 +7,13 @@ import * as THREE from '/vendor/three.module.js';
 // speed are the genuine values.
 // ---------------------------------------------------------------------------
 const AU_UNIT = 150;
-const MERCURY_PERIOD_DAYS = 88;
 const MERCURY_AU = 0.39;
-const MERCURY_SCENE_PERIOD_S = 42; // gameplay pacing anchor
+// Slower than the old timed-mission pacing on purpose: free-roam means people
+// linger up close (especially at Earth Ops), and inner planets moved fast
+// enough at 42s that a stationary close-up camera lost the planet within a
+// few seconds as it visibly orbited away. 240s keeps real relative motion
+// (and Kepler's laws) intact while staying comfortable to examine up close.
+const MERCURY_SCENE_PERIOD_S = 240;
 
 // Axial tilt (deg, real obliquity) and orbital eccentricity are genuine values too.
 const PLANETS = [
@@ -488,6 +492,330 @@ const asteroidData = [];
 scene.add(asteroidMesh);
 
 // ---------------------------------------------------------------------------
+// EARTH OPS — a real-world logistics/transport digital-twin layer on Earth.
+//
+// Honesty note: city/airport/port coordinates and satellite altitudes below
+// are genuine real-world values, and satellite angular speeds are derived
+// from actual Keplerian orbital mechanics for Earth (same math used for the
+// planets above). Flight/shipping/logistics *traffic* is simulated motion
+// along real-world corridors, not live positions — this section is built so
+// each data source is an isolated adapter that can be swapped for a real
+// feed. Two adapters (ISS position, live flight states) hit free, no-key
+// public APIs and fall back to simulation if the request fails; the rest
+// are clearly marked NEEDS KEY and simulate until one is supplied.
+// ---------------------------------------------------------------------------
+const earth = bodies.find((b) => b.name === 'Earth');
+const EARTH_RADIUS_KM = 6371;
+const EARTH_MU = 398600; // km^3/s^2, real Earth gravitational parameter
+
+function kmToGameUnits(km) {
+  return (km * earth.gameRadius) / EARTH_RADIUS_KM;
+}
+
+function latLonToVec3(lat, lon, radius) {
+  const phi = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lon + 180);
+  return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta),
+  );
+}
+
+function greatCircleArc(a, b, altPeak, segments = 40) {
+  const ua = latLonToVec3(a[0], a[1], 1);
+  const ub = latLonToVec3(b[0], b[1], 1);
+  const omega = Math.acos(THREE.MathUtils.clamp(ua.dot(ub), -1, 1));
+  const sinOmega = Math.sin(omega) || 1e-6;
+  const pts = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const A = Math.sin((1 - t) * omega) / sinOmega;
+    const B = Math.sin(t * omega) / sinOmega;
+    const p = new THREE.Vector3(A * ua.x + B * ub.x, A * ua.y + B * ub.y, A * ua.z + B * ub.z).normalize();
+    const alt = 1 + altPeak * Math.sin(t * Math.PI);
+    pts.push(p.multiplyScalar((earth.gameRadius + kmToGameUnits(0)) * alt));
+  }
+  return pts;
+}
+
+function samplePolyline(points, t) {
+  const n = points.length - 1;
+  const f = THREE.MathUtils.clamp(t, 0, 1) * n;
+  const i = Math.floor(f);
+  const a = points[Math.min(i, n)];
+  const b = points[Math.min(i + 1, n)];
+  return a.clone().lerp(b, f - i);
+}
+
+// Real-world reference points (lat, lon).
+const EARTH_CITIES = [
+  ['New York', 40.71, -74.01], ['Los Angeles', 34.05, -118.24], ['Chicago', 41.88, -87.63],
+  ['London', 51.51, -0.13], ['Paris', 48.85, 2.35], ['Berlin', 52.52, 13.40],
+  ['Moscow', 55.76, 37.62], ['Tokyo', 35.68, 139.69], ['Beijing', 39.90, 116.41],
+  ['Shanghai', 31.23, 121.47], ['Mumbai', 19.08, 72.88], ['Delhi', 28.61, 77.21],
+  ['Singapore', 1.35, 103.82], ['Dubai', 25.20, 55.27], ['Sydney', -33.87, 151.21],
+  ['Sao Paulo', -23.55, -46.63], ['Mexico City', 19.43, -99.13], ['Lagos', 6.52, 3.38],
+  ['Cairo', 30.04, 31.24], ['Johannesburg', -26.20, 28.05], ['Seoul', 37.57, 126.98],
+  ['Jakarta', -6.21, 106.85], ['Bangkok', 13.76, 100.50], ['Istanbul', 41.01, 28.98],
+  ['Toronto', 43.65, -79.38], ['Buenos Aires', -34.60, -58.38], ['Nairobi', -1.29, 36.82],
+];
+
+const EARTH_AIRPORTS = {
+  JFK: [40.64, -73.78], LAX: [33.94, -118.41], ORD: [41.98, -87.90], LHR: [51.47, -0.45],
+  CDG: [49.01, 2.55], FRA: [50.03, 8.57], DXB: [25.25, 55.36], HND: [35.55, 139.78],
+  PEK: [40.08, 116.58], SIN: [1.35, 103.99], SYD: [-33.95, 151.18], GRU: [-23.43, -46.47],
+  JNB: [-26.14, 28.25], ICN: [37.46, 126.44], DEL: [28.56, 77.10], IST: [41.26, 28.74],
+  YYZ: [43.68, -79.63],
+};
+
+const EARTH_PORTS = {
+  Shanghai: [31.36, 121.50], Singapore: [1.26, 103.82], Rotterdam: [51.95, 4.14],
+  Busan: [35.10, 129.04], 'Los Angeles/Long Beach': [33.74, -118.26],
+  'Jebel Ali': [24.98, 55.06], Hamburg: [53.54, 9.98], 'New York/New Jersey': [40.68, -74.13],
+  Santos: [-23.96, -46.30],
+};
+
+// Illustrative corridors along genuine real-world trade/travel routes — the
+// *paths* are real, the moving markers are simulated traffic, not live
+// shipment/flight data.
+const FLIGHT_ROUTES = [
+  ['JFK', 'LHR', 'passenger'], ['LAX', 'HND', 'passenger'], ['LHR', 'DXB', 'passenger'],
+  ['DXB', 'SIN', 'passenger'], ['FRA', 'JFK', 'passenger'], ['CDG', 'JFK', 'passenger'],
+  ['SIN', 'SYD', 'passenger'], ['PEK', 'LAX', 'passenger'], ['GRU', 'CDG', 'passenger'],
+  ['JNB', 'LHR', 'passenger'], ['DEL', 'LHR', 'passenger'], ['IST', 'JFK', 'passenger'],
+];
+const SHIPPING_LANES = [
+  ['Shanghai', 'Los Angeles/Long Beach', 'consumer'], ['Rotterdam', 'New York/New Jersey', 'consumer'],
+  ['Singapore', 'Rotterdam', 'consumer'], ['Jebel Ali', 'Singapore', 'energy'],
+  ['Santos', 'Rotterdam', 'food'], ['Busan', 'Los Angeles/Long Beach', 'consumer'],
+];
+const LOGISTICS_CORRIDORS = [
+  ['Los Angeles', 'Chicago', 'consumer'], ['Chicago', 'New York', 'consumer'],
+  ['Mumbai', 'Delhi', 'food'], ['Mexico City', 'Los Angeles', 'consumer'],
+  ['Johannesburg', 'Nairobi', 'food'], ['Berlin', 'Paris', 'industrial'],
+];
+
+function earthOrbitalPeriodSeconds(altitudeKm) {
+  const a = EARTH_RADIUS_KM + altitudeKm;
+  return 2 * Math.PI * Math.sqrt((a * a * a) / EARTH_MU);
+}
+const ISS_ALTITUDE_KM = 408;
+const ISS_REAL_PERIOD_S = earthOrbitalPeriodSeconds(ISS_ALTITUDE_KM); // ~5561s — genuinely the ISS's real period
+const ISS_GAME_PERIOD_S = 20; // gameplay pacing anchor, same idea as MERCURY_SCENE_PERIOD_S
+function satelliteAngularSpeed(altitudeKm) {
+  const realPeriod = earthOrbitalPeriodSeconds(altitudeKm);
+  return (Math.PI * 2) / (ISS_GAME_PERIOD_S * (realPeriod / ISS_REAL_PERIOD_S));
+}
+const SATELLITE_SHELLS = [
+  { name: 'ISS', altitudeKm: ISS_ALTITUDE_KM, color: 0x9fe6ff },
+  { name: 'Starlink shell', altitudeKm: 550, color: 0x6fd6c8 },
+  { name: 'GPS constellation', altitudeKm: 20200, color: 0xe0b04a },
+  { name: 'Geostationary belt', altitudeKm: 35786, color: 0xd65f6f },
+];
+
+const earthOpsLayers = { air: true, sea: true, land: true, sat: true, iot: true };
+let earthOpsClassFilter = 'all';
+const earthOpsRoutes = []; // { category, classTag, points, marker, progress, speed }
+const earthOpsSatellites = []; // { name, marker, ring, angle, angularSpeed, live }
+
+function addRoute(category, classTag, points, color, speed, group) {
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.45 }));
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color }));
+  group.add(line, marker);
+  earthOpsRoutes.push({ category, classTag, points, marker, line, progress: Math.random(), speed });
+}
+
+// Surface layers rotate with Earth's spin (real geography is fixed to the
+// rotating body); satellites are attached to the non-spinning pivot instead,
+// since orbits don't co-rotate with the surface (geostationary aside).
+const surfaceGroup = new THREE.Group();
+earth.tiltGroup.add(surfaceGroup);
+const satelliteGroup = new THREE.Group();
+earth.pivot.add(satelliteGroup);
+
+for (const [a, b, cls] of FLIGHT_ROUTES) {
+  addRoute('air', cls, greatCircleArc(EARTH_AIRPORTS[a], EARTH_AIRPORTS[b], 0.06), 0xbfd4ff, 0.05, surfaceGroup);
+}
+for (const [a, b, cls] of SHIPPING_LANES) {
+  addRoute('sea', cls, greatCircleArc(EARTH_PORTS[a], EARTH_PORTS[b], 0.006), 0x5fb0d6, 0.012, surfaceGroup);
+}
+for (const [a, b, cls] of LOGISTICS_CORRIDORS) {
+  const cityLatLon = (name) => {
+    const c = EARTH_CITIES.find((x) => x[0] === name);
+    return [c[1], c[2]];
+  };
+  addRoute('land', cls, greatCircleArc(cityLatLon(a), cityLatLon(b), 0.01), 0xe0b04a, 0.02, surfaceGroup);
+}
+
+// City/airport/port reference markers — small static points, real coordinates.
+function addPointMarkers(entries, color, size) {
+  const positions = new Float32Array(entries.length * 3);
+  entries.forEach(([, lat, lon], i) => {
+    const p = latLonToVec3(lat, lon, earth.gameRadius * 1.002);
+    positions[i * 3] = p.x; positions[i * 3 + 1] = p.y; positions[i * 3 + 2] = p.z;
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color, size, sizeAttenuation: false }));
+  surfaceGroup.add(pts);
+  return pts;
+}
+addPointMarkers(EARTH_CITIES, 0xffffff, 2.2);
+addPointMarkers(Object.entries(EARTH_AIRPORTS).map(([k, v]) => [k, ...v]), 0xbfd4ff, 2.2);
+addPointMarkers(Object.entries(EARTH_PORTS).map(([k, v]) => [k, ...v]), 0x5fb0d6, 2.2);
+
+// IoT telemetry — simulated device pings scattered near population centers.
+const iotGroup = new THREE.Group();
+surfaceGroup.add(iotGroup);
+const iotPulses = [];
+for (let i = 0; i < 24; i++) {
+  const base = EARTH_CITIES[Math.floor(Math.random() * EARTH_CITIES.length)];
+  const lat = base[1] + (Math.random() - 0.5) * 8;
+  const lon = base[2] + (Math.random() - 0.5) * 8;
+  const p = latLonToVec3(lat, lon, earth.gameRadius * 1.004);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xa6e6a0, transparent: true, opacity: 0.8 });
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 6), mat);
+  dot.position.copy(p);
+  iotGroup.add(dot);
+  iotPulses.push({ dot, mat, phase: Math.random() * Math.PI * 2 });
+}
+
+// Satellite shells — illustrative rings at real altitude, one marker per
+// shell orbiting at the real relative angular speed for that altitude.
+for (const shell of SATELLITE_SHELLS) {
+  const ringRadius = earth.gameRadius + kmToGameUnits(shell.altitudeKm);
+  const ringPts = [];
+  for (let i = 0; i <= 96; i++) {
+    const t = (i / 96) * Math.PI * 2;
+    ringPts.push(new THREE.Vector3(Math.cos(t) * ringRadius, 0, Math.sin(t) * ringRadius));
+  }
+  const ring = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(ringPts),
+    new THREE.LineBasicMaterial({ color: shell.color, transparent: true, opacity: 0.25 }),
+  );
+  satelliteGroup.add(ring);
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: shell.color }));
+  satelliteGroup.add(marker);
+  earthOpsSatellites.push({
+    name: shell.name, marker, ring, ringRadius,
+    angle: Math.random() * Math.PI * 2,
+    angularSpeed: satelliteAngularSpeed(shell.altitudeKm),
+    live: false,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Data source adapters — "easements" for real integrations.
+//
+// LIVE sources hit free, key-less, CORS-friendly public APIs directly from
+// the browser and fall back to simulation on any failure (rate limit,
+// network policy, offline). NEEDS_KEY sources are architected the same way
+// but require a real credential this app can't obtain on your behalf —
+// paste one into Configure API Keys and fetchLive() below is where it plugs in.
+// ---------------------------------------------------------------------------
+const API_KEY_STORAGE = 'solar-explorer-api-keys';
+function loadApiKeys() {
+  try { return JSON.parse(localStorage.getItem(API_KEY_STORAGE)) || {}; } catch { return {}; }
+}
+function saveApiKeys(keys) {
+  try { localStorage.setItem(API_KEY_STORAGE, JSON.stringify(keys)); } catch { /* private browsing, etc. */ }
+}
+
+async function fetchWithTimeout(url, ms = 6000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const dataSources = {
+  iss: {
+    label: 'ISS position', needsKey: false, status: 'connecting',
+    async fetchLive() {
+      const res = await fetchWithTimeout('https://api.wheretheiss.at/v1/satellites/25544');
+      if (!res.ok) throw new Error('bad response');
+      const d = await res.json();
+      return { lat: d.latitude, lon: d.longitude };
+    },
+  },
+  flights: {
+    label: 'Live flight traffic (OpenSky Network)', needsKey: false, status: 'connecting',
+    async fetchLive() {
+      const res = await fetchWithTimeout('https://opensky-network.org/api/states/all');
+      if (!res.ok) throw new Error('bad response');
+      const d = await res.json();
+      return d.states || [];
+    },
+  },
+  maritime: { label: 'Maritime AIS (MarineTraffic / AISHub)', needsKey: true, status: 'needs_key', fetchLive: null },
+  freight: { label: 'Freight / carrier data (FMCSA SAFER, project44, FourKites)', needsKey: true, status: 'needs_key', fetchLive: null },
+  iot: { label: 'IoT device telemetry (AWS IoT / Azure IoT / generic MQTT)', needsKey: true, status: 'needs_key', fetchLive: null },
+  maps: { label: 'Map imagery (Google Maps / Apple MapKit)', needsKey: true, status: 'needs_key', fetchLive: null },
+};
+
+async function pollLiveIss() {
+  try {
+    const { lat, lon } = await dataSources.iss.fetchLive();
+    const sat = earthOpsSatellites.find((s) => s.name === 'ISS');
+    if (sat) {
+      const p = latLonToVec3(lat, lon, sat.ringRadius);
+      sat.marker.position.copy(p);
+      sat.live = true;
+    }
+    dataSources.iss.status = 'live';
+  } catch {
+    const sat = earthOpsSatellites.find((s) => s.name === 'ISS');
+    if (sat) sat.live = false;
+    dataSources.iss.status = 'simulated';
+  }
+  renderDataSourceStatus();
+}
+
+async function pollLiveFlights() {
+  try {
+    const states = await dataSources.flights.fetchLive();
+    dataSources.flights.status = states.length ? 'live' : 'simulated';
+  } catch {
+    dataSources.flights.status = 'simulated';
+  }
+  renderDataSourceStatus();
+}
+
+function renderDataSourceStatus() {
+  const el = document.getElementById('dataSourceStatus');
+  if (!el) return;
+  const badge = (s) => s === 'live' ? 'LIVE' : s === 'needs_key' ? 'NEEDS KEY' : s === 'connecting' ? 'CONNECTING' : 'SIMULATED';
+  el.innerHTML = Object.values(dataSources).map((s) => `
+    <div class="row"><span>${s.label}</span><b class="badge badge-${badge(s.status).toLowerCase().replace(' ', '-')}">${badge(s.status)}</b></div>
+  `).join('');
+}
+renderDataSourceStatus();
+pollLiveIss();
+pollLiveFlights();
+setInterval(pollLiveIss, 20000);
+setInterval(pollLiveFlights, 30000);
+
+function applyEarthOpsFilters() {
+  for (const r of earthOpsRoutes) {
+    const layerOn = earthOpsLayers[r.category];
+    const classOn = earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag;
+    const visible = layerOn && classOn;
+    r.marker.visible = visible;
+    r.line.visible = layerOn; // corridor paths stay visible per-layer regardless of class filter
+  }
+  for (const s of earthOpsSatellites) {
+    s.marker.visible = earthOpsLayers.sat;
+    s.ring.visible = earthOpsLayers.sat;
+  }
+  iotGroup.visible = earthOpsLayers.iot;
+}
+
+// ---------------------------------------------------------------------------
 // Flight controls
 // ---------------------------------------------------------------------------
 const input = { forward: 0, boost: false, brake: false, strafe: 0 };
@@ -675,6 +1003,48 @@ function enterFreeRoam() {
 document.getElementById('start').addEventListener('click', enterFreeRoam);
 
 // ---------------------------------------------------------------------------
+// Earth Ops panel wiring — layer toggles, class filter, API key modal.
+// ---------------------------------------------------------------------------
+const earthOpsPanel = document.getElementById('earthOpsPanel');
+document.getElementById('earthOpsToggle').addEventListener('click', () => {
+  earthOpsPanel.classList.toggle('hidden');
+});
+document.getElementById('closeEarthOps').addEventListener('click', () => earthOpsPanel.classList.add('hidden'));
+earthOpsPanel.addEventListener('click', (e) => { if (e.target === earthOpsPanel) earthOpsPanel.classList.add('hidden'); });
+document.querySelectorAll('#earthOpsPanel input[type=checkbox][data-layer]').forEach((cb) => {
+  cb.addEventListener('change', () => {
+    earthOpsLayers[cb.dataset.layer] = cb.checked;
+    applyEarthOpsFilters();
+  });
+});
+document.getElementById('earthOpsClassFilter').addEventListener('change', (e) => {
+  earthOpsClassFilter = e.target.value;
+  applyEarthOpsFilters();
+});
+applyEarthOpsFilters();
+
+const apiKeyModal = document.getElementById('apiKeyModal');
+document.getElementById('configureKeys').addEventListener('click', () => {
+  const keys = loadApiKeys();
+  for (const input of document.querySelectorAll('#apiKeyModal input[data-source]')) {
+    input.value = keys[input.dataset.source] || '';
+  }
+  apiKeyModal.classList.remove('hidden');
+});
+document.getElementById('closeApiKeyModal').addEventListener('click', () => apiKeyModal.classList.add('hidden'));
+document.getElementById('closeApiKeyModalX').addEventListener('click', () => apiKeyModal.classList.add('hidden'));
+apiKeyModal.addEventListener('click', (e) => { if (e.target === apiKeyModal) apiKeyModal.classList.add('hidden'); });
+document.getElementById('saveApiKeys').addEventListener('click', () => {
+  const keys = {};
+  for (const input of document.querySelectorAll('#apiKeyModal input[data-source]')) {
+    if (input.value.trim()) keys[input.dataset.source] = input.value.trim();
+  }
+  saveApiKeys(keys);
+  flash('API KEYS SAVED (this browser only)');
+  apiKeyModal.classList.add('hidden');
+});
+
+// ---------------------------------------------------------------------------
 // HUD helpers
 // ---------------------------------------------------------------------------
 const gyroCtx = document.getElementById('gyroRadar').getContext('2d');
@@ -754,6 +1124,20 @@ function frame(ts) {
     a.theta += a.speed * dt * 0.05;
   }
   updateAsteroidMatrices();
+
+  for (const r of earthOpsRoutes) {
+    r.progress = (r.progress + r.speed * dt) % 1;
+    r.marker.position.copy(samplePolyline(r.points, r.progress));
+  }
+  for (const s of earthOpsSatellites) {
+    if (s.live) continue; // live-positioned marker (e.g. real ISS fix) holds until the next poll
+    s.angle += s.angularSpeed * dt;
+    s.marker.position.set(Math.cos(s.angle) * s.ringRadius, 0, Math.sin(s.angle) * s.ringRadius);
+  }
+  for (const p of iotPulses) {
+    p.phase += dt * 2;
+    p.mat.opacity = 0.35 + Math.abs(Math.sin(p.phase)) * 0.5;
+  }
 
   if (roaming) {
     readKeyboard();

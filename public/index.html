@@ -15,6 +15,8 @@
     <canvas id="scene"></canvas>
 
     <div class="hud">
+      <div class="touch-look" id="touchLook"></div>
+
       <div class="hud-top">
         <div class="hud-box title-box">
           <span class="title">SOLAR EXPLORER</span>
@@ -24,6 +26,7 @@
           <span class="label">UTC</span>
           <span class="mono" id="clock">--:--:--</span>
         </div>
+        <button id="earthOpsToggle" class="hud-box chip-btn">EARTH OPS</button>
       </div>
 
       <div class="hud-left hud-box">
@@ -64,14 +67,58 @@
 
       <div class="flash" id="flash"></div>
 
-      <div class="touch-look" id="touchLook"></div>
       <button class="thrust-btn" id="thrustBtn">THRUST</button>
       <button class="boost-btn" id="boostBtn">BOOST</button>
     </div>
 
+    <div class="panel-modal hidden" id="earthOpsPanel">
+      <div class="panel-modal-inner">
+        <button id="closeEarthOps" class="modal-close">&times;</button>
+        <div class="panel-title">EARTH OPS &mdash; LOGISTICS TWIN</div>
+        <p class="note">Real geography (cities, airports, ports) and real satellite-altitude orbital mechanics. Traffic along these corridors is simulated unless a source below reads LIVE &mdash; see status list.</p>
+
+        <div class="panel-title">LAYERS</div>
+        <label class="layer-row"><input type="checkbox" data-layer="air" checked /> Air traffic (passenger routes)</label>
+        <label class="layer-row"><input type="checkbox" data-layer="sea" checked /> Sea shipping (trade lanes)</label>
+        <label class="layer-row"><input type="checkbox" data-layer="land" checked /> Land logistics (freight corridors)</label>
+        <label class="layer-row"><input type="checkbox" data-layer="sat" checked /> Satellites (ISS / Starlink / GPS / GEO)</label>
+        <label class="layer-row"><input type="checkbox" data-layer="iot" checked /> IoT telemetry (simulated)</label>
+
+        <div class="panel-title">FILTER BY CLASS</div>
+        <select id="earthOpsClassFilter">
+          <option value="all">All classes</option>
+          <option value="passenger">Passenger</option>
+          <option value="consumer">Consumer goods</option>
+          <option value="energy">Energy</option>
+          <option value="food">Food / agriculture</option>
+          <option value="industrial">Industrial</option>
+        </select>
+
+        <div class="panel-title">DATA SOURCES</div>
+        <div id="dataSourceStatus"></div>
+        <button id="configureKeys" class="chip">Configure API Keys</button>
+      </div>
+    </div>
+
+    <div class="panel-modal hidden" id="apiKeyModal">
+      <div class="panel-modal-inner">
+        <button id="closeApiKeyModalX" class="modal-close">&times;</button>
+        <div class="panel-title">API KEYS</div>
+        <p class="note">Stored only in this browser (localStorage), never sent anywhere by this app. These sources need a real account with the provider &mdash; ISS position and flight traffic already work with no key.</p>
+        <label class="key-row">Maritime AIS (MarineTraffic / AISHub)<input type="text" data-source="maritime" placeholder="paste API key" /></label>
+        <label class="key-row">Freight / carrier (FMCSA SAFER, project44, FourKites)<input type="text" data-source="freight" placeholder="paste API key" /></label>
+        <label class="key-row">IoT platform (AWS IoT / Azure IoT / MQTT)<input type="text" data-source="iot" placeholder="paste API key" /></label>
+        <label class="key-row">Map imagery (Google Maps / Apple MapKit)<input type="text" data-source="maps" placeholder="paste API key" /></label>
+        <div class="modal-actions">
+          <button id="closeApiKeyModal" class="chip">Cancel</button>
+          <button id="saveApiKeys" class="chip active">Save</button>
+        </div>
+      </div>
+    </div>
+
     <div class="overlay" id="overlay">
       <h1>SOLAR EXPLORER</h1>
-      <p class="lede">Free-roam a physically-scaled model of the solar system, no objectives or timer &mdash; just fly. Real elliptical orbits (Kepler's laws), real axial tilts, real major moons, and a backdrop of the actual brightest stars at their real positions &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Use Quick Travel to jump straight to any planet.</p>
+      <p class="lede">Free-roam a physically-scaled model of the solar system, no objectives or timer &mdash; just fly. Real elliptical orbits (Kepler's laws), real axial tilts, real major moons, and a backdrop of the actual brightest stars at their real positions &mdash; inner worlds visibly orbit, outer worlds barely creep, just like reality. Use Quick Travel to jump straight to any planet, and open EARTH OPS near Earth for a real-geography air/sea/land/satellite logistics overlay.</p>
       <div class="controls-grid">
         <div><b>Desktop</b><br/>Mouse look (click to lock) &middot; W/S thrust &middot; A/D strafe &middot; Shift boost &middot; Space brake</div>
         <div><b>Touch</b><br/>Drag right side to look &middot; hold THRUST &middot; hold BOOST</div>

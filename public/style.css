@@ -65,6 +65,17 @@ body {
 .clock-box { min-width: 78px; }
 .hud-top .mono { font-size: 15px; }
 
+.chip-btn {
+  pointer-events: auto;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--signal);
+  border-color: var(--line);
+  cursor: pointer;
+}
+.chip-btn:active { background: var(--signal); color: #05201c; }
+
 .hud-left, .hud-right {
   position: absolute;
   top: 66px;
@@ -280,3 +291,113 @@ body {
   font-weight: 700;
 }
 .overlay button.primary:active { opacity: 0.85; }
+
+.note { color: var(--ink-dim); font-size: 11px; max-width: 280px; }
+
+/* Earth Ops panel + API key modal share this floating-card treatment. */
+.panel-modal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(5, 7, 10, 0.7);
+  pointer-events: auto;
+  z-index: 5;
+}
+.panel-modal.hidden { display: none; }
+.panel-modal-inner {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  max-width: 420px;
+  width: 100%;
+  max-height: 82dvh;
+  overflow-y: auto;
+  text-align: left;
+  font-size: 12px;
+}
+.panel-modal-inner { position: relative; }
+.panel-modal-inner .panel-title { margin-top: 12px; }
+.panel-modal-inner .panel-title:first-child { margin-top: 0; }
+.panel-modal-inner .note { max-width: none; margin: 4px 0 8px; }
+
+.modal-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.05);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--ink-dim);
+}
+.layer-row input { accent-color: var(--signal); }
+
+#earthOpsClassFilter {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.04);
+  color: var(--ink);
+}
+
+#dataSourceStatus .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  color: var(--ink-dim);
+}
+.badge {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.badge-live { background: rgba(95,214,200,0.2); color: var(--signal); }
+.badge-simulated { background: rgba(255,255,255,0.1); color: var(--ink-dim); }
+.badge-needs-key { background: rgba(224,176,74,0.18); color: #e0b04a; }
+.badge-connecting { background: rgba(255,255,255,0.08); color: var(--ink-dim); }
+
+.key-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+.key-row input {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.04);
+  color: var(--ink);
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.modal-actions .chip { margin-top: 0; }
