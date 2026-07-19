@@ -520,15 +520,15 @@ function kmToGameUnits(km) {
 }
 
 function greatCircleDistanceKm(a, b) {
-  const toRad = (d) => THREE.MathUtils.degToRad(d);
+  const toRad = (degrees) => THREE.MathUtils.degToRad(degrees);
   const [lat1, lon1] = a;
   const [lat2, lon2] = b;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const p1 = toRad(lat1);
-  const p2 = toRad(lat2);
-  const hRaw = Math.sin(dLat / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dLon / 2) ** 2;
-  const h = THREE.MathUtils.clamp(hRaw, 0, 1);
+  const lat1Rad = toRad(lat1);
+  const lat2Rad = toRad(lat2);
+  const haversine = Math.sin(dLat / 2) ** 2 + Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) ** 2;
+  const h = THREE.MathUtils.clamp(haversine, 0, 1);
   const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   return EARTH_RADIUS_KM * c;
 }
