@@ -275,43 +275,85 @@
 </form>
 
 <script>
-  // Mirrors lib/lenses.js and lib/agents.js from the CLI, in the browser.
-  const lenses = {
-    literal(text) { return text.trim(); },
-    pattern(text) {
-      const words = text.toLowerCase().split(/\W+/).filter(Boolean);
-      const counts = new Map();
-      for (const w of words) counts.set(w, (counts.get(w) || 0) + 1);
-      const repeated = [...counts.entries()]
-        .filter(([, c]) => c > 1)
-        .sort((a, b) => b[1] - a[1])
-        .map(([w, c]) => `${w} (${c}x)`);
-      return repeated.length
-        ? `${text.trim()}\nrepeated terms: ${repeated.join(', ')}`
-        : `${text.trim()}\nno repeated terms detected`;
-    },
-    metaphor(text) {
-      const t = text.trim();
-      if (!t) return t;
-      return `Treat "${t}" as a landscape: what is the terrain, what is the weather, and what is the traveler looking for?`;
-    },
-  };
-  const lensNames = Object.keys(lenses);
-  let currentLens = 'literal';
-
-  function primaryAgent(text, lensName) {
-    return { agent: 'primary', lens: lensName, text: lenses[lensName](text) };
+  // --- lib/lenses.js, ported line for line ---
+  function literalLens(text) {
+    return text.trim();
   }
+
+  function patternLens(text) {
+    const words = text
+      .toLowerCase()
+      .split(/\W+/)
+      .filter(Boolean);
+
+    const counts = new Map();
+    for (const word of words) {
+      counts.set(word, (counts.get(word) || 0) + 1);
+    }
+
+    const repeated = [...counts.entries()]
+      .filter(([, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1])
+      .map(([word, count]) => `${word} (${count}x)`);
+
+    if (repeated.length === 0) {
+      return `${text.trim()}\n  [no repeated terms detected]`;
+    }
+    return `${text.trim()}\n  [repeated terms: ${repeated.join(', ')}]`;
+  }
+
+  function metaphorLens(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return trimmed;
+    return `Treat "${trimmed}" as a landscape: what is the terrain, what is the weather, and what is the traveler looking for?`;
+  }
+
+  const lenses = {
+    literal: literalLens,
+    pattern: patternLens,
+    metaphor: metaphorLens,
+  };
+
+  function listLenses() {
+    return Object.keys(lenses);
+  }
+
+  function applyLens(name, text) {
+    const lens = lenses[name];
+    if (!lens) {
+      throw new Error(`Unknown lens: ${name}. Available: ${listLenses().join(', ')}`);
+    }
+    return lens(text);
+  }
+  // --- end lib/lenses.js ---
+
+  // --- lib/agents.js, ported line for line ---
+  function primaryAgent(text, lensName) {
+    const framed = applyLens(lensName, text);
+    return {
+      agent: 'primary',
+      lens: lensName,
+      text: framed,
+    };
+  }
+
   function twinAgent(text, lensName) {
-    const framed = lenses[lensName](text);
+    const framed = applyLens(lensName, text);
     const reversed = framed.split('').reverse().join('');
     return {
       agent: 'twin',
       lens: lensName,
-      text: framed,
-      sub: `counter-read: ${reversed.slice(0, 60)}${reversed.length > 60 ? '…' : ''}`,
+      text: `${framed}\n  [twin counter-read: consider the inverse — ${reversed.slice(0, 60)}${reversed.length > 60 ? '...' : ''}]`,
     };
   }
+
+  function respond(text, lensName) {
+    return [primaryAgent(text, lensName), twinAgent(text, lensName)];
+  }
+  // --- end lib/agents.js ---
+
+  const lensNames = listLenses();
+  let currentLens = 'literal';
 
   const lensesEl = document.getElementById('lenses');
   lensNames.forEach((name) => {
@@ -355,7 +397,7 @@
         </div>
         <div class="card twin">
           <div class="who">twin · ${twin.lens}</div>
-          <div class="body">${escapeHTML(twin.text)}<span class="sub">${escapeHTML(twin.sub)}</span></div>
+          <div class="body">${escapeHTML(twin.text)}</div>
         </div>
       </div>
     `;
@@ -367,7 +409,8 @@
     e.preventDefault();
     const value = field.value.trim();
     if (!value) return;
-    render(value, primaryAgent(value, currentLens), twinAgent(value, currentLens));
+    const [primary, twin] = respond(value, currentLens);
+    render(value, primary, twin);
     field.value = '';
     field.style.height = 'auto';
   });
