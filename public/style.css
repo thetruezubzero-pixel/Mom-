@@ -74,6 +74,7 @@ body {
   border-color: var(--line);
   cursor: pointer;
 }
+.chip-btn.active { background: var(--signal); color: #05201c; }
 .chip-btn:active { background: var(--signal); color: #05201c; }
 
 .hud-left, .hud-right {
@@ -376,6 +377,27 @@ body {
   font-size: 10px;
   color: rgba(127,163,156,0.85);
 }
+#earthScaleStatus .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--ink-dim);
+}
+#earthScaleStatus .row.active-layer span { color: var(--ink); }
+#earthScaleStatus .row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.status-stack {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 #earthOpsMetrics .row {
   display: flex;
   justify-content: space-between;
@@ -396,6 +418,9 @@ body {
 .badge-simulated { background: rgba(255,255,255,0.1); color: var(--ink-dim); }
 .badge-needs-key { background: rgba(224,176,74,0.18); color: #e0b04a; }
 .badge-connecting { background: rgba(255,255,255,0.08); color: var(--ink-dim); }
+.badge-static { background: rgba(113,137,196,0.18); color: #b8c9ff; }
+.badge-active { background: rgba(95,214,200,0.2); color: var(--signal); }
+.badge-standby { background: rgba(255,255,255,0.08); color: var(--ink-dim); }
 
 .key-row {
   display: flex;

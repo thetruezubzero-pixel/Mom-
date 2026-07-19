@@ -1256,10 +1256,116 @@ motionToggle.addEventListener('click', () => {
 // Free-roam state — no objectives, no timer, no fail state.
 // ---------------------------------------------------------------------------
 let roaming = false;
+const earthLockState = {
+  active: false,
+  distance: earth.gameRadius * 3.5,
+  minDistance: earth.gameRadius * 1.35,
+  maxDistance: earth.gameRadius * 18,
+};
+const EARTH_SCALE_LAYERS = [
+  { key: 'solar', label: 'Solar / galactic context', hudLabel: 'SOLAR', minKm: 300000, maxKm: Infinity, sourceKeys: [] },
+  { key: 'orbital', label: 'Orbital / satellite', hudLabel: 'ORBITAL', minKm: 25000, maxKm: 300000, sourceKeys: ['iss', 'maps'] },
+  { key: 'atmosphere', label: 'Atmosphere / weather', hudLabel: 'ATMOS', minKm: 2500, maxKm: 25000, sourceKeys: ['maps'] },
+  { key: 'geography', label: 'Continent / country / city', hudLabel: 'MAP', minKm: 150, maxKm: 2500, sourceKeys: ['maps'] },
+  { key: 'transport', label: 'Transport / infrastructure', hudLabel: 'OPS', minKm: 10, maxKm: 150, sourceKeys: ['flights', 'maritime', 'freight', 'iot'] },
+  { key: 'local', label: 'Local geology / population', hudLabel: 'LOCAL', minKm: 0, maxKm: 10, sourceKeys: ['iot'] },
+];
+let lastEarthScaleMarkup = '';
 
 const overlay = document.getElementById('overlay');
 const flashEl = document.getElementById('flash');
 const travelListEl = document.getElementById('travelList');
+const earthLockToggle = document.getElementById('earthLockToggle');
+
+function getEarthWorldPosition(target = new THREE.Vector3()) {
+  earth.mesh.getWorldPosition(target);
+  return target;
+}
+
+function getEarthSurfaceDistanceKm() {
+  const earthPos = getEarthWorldPosition();
+  const surfaceUnits = Math.max(0, camera.position.distanceTo(earthPos) - earth.gameRadius);
+  const kmPerUnit = earth.diameterKm / (earth.gameRadius * 2);
+  return surfaceUnits * kmPerUnit;
+}
+
+function activeEarthScaleLayer(surfaceKm = getEarthSurfaceDistanceKm()) {
+  return EARTH_SCALE_LAYERS.find((layer) => surfaceKm >= layer.minKm && surfaceKm < layer.maxKm) || EARTH_SCALE_LAYERS[0];
+}
+
+function layerReadinessBadge(sourceKeys) {
+  if (!sourceKeys.length) return 'static';
+  const statuses = sourceKeys.map((key) => dataSources[key]?.status).filter(Boolean);
+  if (statuses.includes('live')) return 'live';
+  if (statuses.includes('stale')) return 'stale';
+  if (statuses.includes('connecting')) return 'connecting';
+  if (statuses.every((status) => status === 'needs_key')) return 'needs_key';
+  return 'simulated';
+}
+
+function syncEarthLockButton() {
+  if (!earthLockToggle) return;
+  earthLockToggle.textContent = earthLockState.active ? 'UNLOCK EARTH' : 'LOCK EARTH';
+  earthLockToggle.classList.toggle('active', earthLockState.active);
+}
+
+function syncEarthLockCamera() {
+  const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+  const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
+  const earthPos = getEarthWorldPosition();
+  camera.position.copy(earthPos).addScaledVector(forwardVec, -earthLockState.distance);
+  camera.lookAt(earthPos);
+}
+
+function setEarthLock(active, { warpToEarth = false, silent = false } = {}) {
+  if (active) {
+    if (warpToEarth) travelTo('Earth', { suppressFlash: true, preserveEarthLock: true });
+    const earthPos = getEarthWorldPosition();
+    const currentOffset = camera.position.clone().sub(earthPos);
+    earthLockState.distance = THREE.MathUtils.clamp(
+      currentOffset.length() || earth.gameRadius * 3.5,
+      earthLockState.minDistance,
+      earthLockState.maxDistance,
+    );
+    earthLockState.active = true;
+    velocity.set(0, 0, 0);
+    syncEarthLockCamera();
+    if (!silent) flash('EARTH LOCK ON — LOOK TO ORBIT');
+  } else {
+    earthLockState.active = false;
+    velocity.set(0, 0, 0);
+    if (!silent) flash('EARTH LOCK OFF');
+  }
+  syncEarthLockButton();
+}
+
+function renderEarthScaleStatus() {
+  const el = document.getElementById('earthScaleStatus');
+  if (!el) return;
+  const surfaceKm = getEarthSurfaceDistanceKm();
+  const activeLayer = activeEarthScaleLayer(surfaceKm);
+  const markup = EARTH_SCALE_LAYERS.map((layer) => {
+    const active = layer.key === activeLayer.key;
+    const readiness = layerReadinessBadge(layer.sourceKeys);
+    const readinessLabel = readiness === 'needs_key' ? 'NEEDS KEY' : readiness.toUpperCase().replace(/_/g, ' ');
+    const detail = layer.sourceKeys.length
+      ? `depends on ${layer.sourceKeys.map((key) => dataSources[key]?.label || key).join(' + ')}`
+      : 'uses the static starfield + planetary simulation';
+    return `
+      <div class="row ${active ? 'active-layer' : ''}">
+        <span>${layer.label}<small class="source-detail">${detail}</small></span>
+        <span class="status-stack">
+          <b class="badge ${active ? 'badge-active' : 'badge-standby'}">${active ? 'ACTIVE' : 'READY'}</b>
+          <b class="badge badge-${readiness.replace(/_/g, '-')}">${readinessLabel}</b>
+        </span>
+      </div>
+    `;
+  }).join('');
+  if (markup !== lastEarthScaleMarkup) {
+    el.innerHTML = markup;
+    lastEarthScaleMarkup = markup;
+  }
+}
 
 function flash(msg) {
   flashEl.textContent = msg;
@@ -1280,7 +1386,8 @@ renderTravelList();
 // Places the ship a comfortable distance from the target, on its sunlit side,
 // looking straight at it — the camera is a real THREE.Camera so lookAt()
 // orients correctly (a plain Object3D would orient the opposite way).
-function travelTo(name) {
+function travelTo(name, { suppressFlash = false, preserveEarthLock = false } = {}) {
+  if (name !== 'Earth' && earthLockState.active && !preserveEarthLock) setEarthLock(false, { silent: true });
   let p, radius;
   if (name === 'Sun') {
     p = new THREE.Vector3(0, 0, 0);
@@ -1307,19 +1414,35 @@ function travelTo(name) {
   yaw = e.y;
   pitch = e.x;
   velocity.set(0, 0, 0);
-  flash(`WARPED TO ${name.toUpperCase()}`);
+  if (name === 'Earth' && earthLockState.active) {
+    const earthPos = getEarthWorldPosition();
+    earthLockState.distance = THREE.MathUtils.clamp(
+      camera.position.distanceTo(earthPos),
+      earthLockState.minDistance,
+      earthLockState.maxDistance,
+    );
+    syncEarthLockCamera();
+  }
+  if (!suppressFlash) flash(`WARPED TO ${name.toUpperCase()}`);
 }
 
 function enterFreeRoam() {
+  setEarthLock(false, { silent: true });
   velocity.set(0, 0, 0);
   yaw = -Math.PI / 2;
   pitch = -0.05;
   camera.position.set(sceneDistance(startAU), 6, 0);
   overlay.classList.add('hidden');
   roaming = true;
+  syncEarthLockButton();
 }
 
 document.getElementById('start').addEventListener('click', enterFreeRoam);
+earthLockToggle.addEventListener('click', () => {
+  setEarthLock(!earthLockState.active, { warpToEarth: !earthLockState.active });
+});
+syncEarthLockButton();
+renderEarthScaleStatus();
 
 // ---------------------------------------------------------------------------
 // Earth Ops panel wiring — layer toggles, class filter, API key modal.
@@ -1388,8 +1511,11 @@ function updateHud(now, dt) {
   document.getElementById('pitchVal').textContent = pitchDeg.toFixed(1) + '°';
   document.getElementById('rollVal').textContent = rollDeg.toFixed(1) + '°';
   document.getElementById('yawVal').textContent = ((yawDeg + 360) % 360).toFixed(1) + '°';
-  document.getElementById('speedVal').textContent = velocity.length().toFixed(0) + ' u/s';
+  document.getElementById('speedVal').textContent = earthLockState.active
+    ? `LOCK ${earthLockState.distance.toFixed(1)} u`
+    : velocity.length().toFixed(0) + ' u/s';
   drawGyroRadar(pitchDeg, rollDeg);
+  renderEarthScaleStatus();
 
   // nearest body — pure telemetry, no objective attached to it. Includes the
   // Sun (real diameter/surface temp) so parking there doesn't misleadingly
@@ -1416,6 +1542,8 @@ function updateHud(now, dt) {
     const kmPerUnit = nearest.diameterKm / (nearest.gameRadius * 2);
     document.getElementById('tRange').textContent = `${Math.round(surfaceDist * kmPerUnit).toLocaleString()} km`;
   }
+  document.getElementById('tLock').textContent = earthLockState.active ? 'EARTH' : 'OFF';
+  document.getElementById('tScale').textContent = activeEarthScaleLayer().hudLabel;
 }
 
 function routeSourceFactor(sourceKey) {
@@ -1488,32 +1616,46 @@ function frame(ts) {
     const boosting = input.boost || touchBoost;
 
     const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
-    camera.quaternion.copy(camQuat);
+    if (earthLockState.active) {
+      const zoomDir = dir - (input.brake ? 1 : 0);
+      if (zoomDir !== 0) {
+        const zoomRate = ACCEL * 0.5 * (boosting ? BOOST_MULT : 1);
+        earthLockState.distance = THREE.MathUtils.clamp(
+          earthLockState.distance - zoomDir * zoomRate * dt,
+          earthLockState.minDistance,
+          earthLockState.maxDistance,
+        );
+      }
+      velocity.set(0, 0, 0);
+      syncEarthLockCamera();
+    } else {
+      camera.quaternion.copy(camQuat);
 
-    const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
-    const rightVec = new THREE.Vector3(1, 0, 0).applyQuaternion(camQuat);
+      const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
+      const rightVec = new THREE.Vector3(1, 0, 0).applyQuaternion(camQuat);
 
-    if (dir !== 0) velocity.addScaledVector(forwardVec, ACCEL * dir * (boosting ? BOOST_MULT : 1) * dt);
-    if (input.strafe) velocity.addScaledVector(rightVec, ACCEL * dt * input.strafe);
+      if (dir !== 0) velocity.addScaledVector(forwardVec, ACCEL * dir * (boosting ? BOOST_MULT : 1) * dt);
+      if (input.strafe) velocity.addScaledVector(rightVec, ACCEL * dt * input.strafe);
 
-    if (input.brake) velocity.multiplyScalar(Math.max(0, 1 - 3 * dt));
+      if (input.brake) velocity.multiplyScalar(Math.max(0, 1 - 3 * dt));
 
-    const maxSpd = MAX_SPEED * (boosting ? BOOST_MULT : 1);
-    if (velocity.length() > maxSpd) velocity.setLength(maxSpd);
-    velocity.multiplyScalar(Math.max(0, 1 - DRAG * dt));
+      const maxSpd = MAX_SPEED * (boosting ? BOOST_MULT : 1);
+      if (velocity.length() > maxSpd) velocity.setLength(maxSpd);
+      velocity.multiplyScalar(Math.max(0, 1 - DRAG * dt));
 
-    camera.position.addScaledVector(velocity, dt);
+      camera.position.addScaledVector(velocity, dt);
 
-    // Keep a sane distance from the sun's core — slide tangentially rather
-    // than killing all momentum, so the ship glides past instead of sticking.
-    const distFromSun = camera.position.length();
-    if (distFromSun < SUN_RADIUS + 4) {
-      const normal = distFromSun > 0.001
-        ? camera.position.clone().normalize()
-        : new THREE.Vector3(1, 0, 0);
-      camera.position.copy(normal.clone().multiplyScalar(SUN_RADIUS + 4));
-      const radialSpeed = velocity.dot(normal);
-      if (radialSpeed < 0) velocity.addScaledVector(normal, -radialSpeed);
+      // Keep a sane distance from the sun's core — slide tangentially rather
+      // than killing all momentum, so the ship glides past instead of sticking.
+      const distFromSun = camera.position.length();
+      if (distFromSun < SUN_RADIUS + 4) {
+        const normal = distFromSun > 0.001
+          ? camera.position.clone().normalize()
+          : new THREE.Vector3(1, 0, 0);
+        camera.position.copy(normal.clone().multiplyScalar(SUN_RADIUS + 4));
+        const radialSpeed = velocity.dot(normal);
+        if (radialSpeed < 0) velocity.addScaledVector(normal, -radialSpeed);
+      }
     }
 
     updateHud(ts, dt);
