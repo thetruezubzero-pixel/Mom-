@@ -362,6 +362,13 @@ const sunMesh = new THREE.Mesh(
 scene.add(sunMesh);
 scene.add(glowSprite(0xffcc66, SUN_RADIUS * 6));
 
+// Real Sun data (surface temp, diameter) so the Nearest Body panel makes
+// sense when you're parked at the Sun rather than reporting a planet instead.
+const SUN_BODY = {
+  name: 'Sun', au: 0, diameterKm: 1392700, tempC: 5505, moons: 0, periodDays: null,
+  gameRadius: SUN_RADIUS, mesh: sunMesh,
+};
+
 // ---------------------------------------------------------------------------
 // Planets
 // ---------------------------------------------------------------------------
@@ -979,6 +986,12 @@ function travelTo(name) {
     b.mesh.getWorldPosition(p);
     radius = b.gameRadius;
   }
+  // A tighter approach distance would make the Sun a more reliable "nearest
+  // body" winner over Mercury (whose perihelion can pass close by), but it
+  // also parks the camera inside the sun glow sprite's bright zone and washes
+  // out the whole screen — a real visual regression that matters more than
+  // the rare case of Mercury edging out the Sun for "nearest" at some orbital
+  // phases. Keep the same comfortable approach distance as every other body.
   const d = radius * 3.5;
   const towardSun = name === 'Sun' ? new THREE.Vector3(1, 0, 0) : p.clone().negate().normalize();
   const tangent = new THREE.Vector3(0, 1, 0).cross(towardSun).normalize();
@@ -1072,9 +1085,11 @@ function updateHud(now, dt) {
   document.getElementById('speedVal').textContent = velocity.length().toFixed(0) + ' u/s';
   drawGyroRadar(pitchDeg, rollDeg);
 
-  // nearest planet — pure telemetry, no objective attached to it
+  // nearest body — pure telemetry, no objective attached to it. Includes the
+  // Sun (real diameter/surface temp) so parking there doesn't misleadingly
+  // report whichever planet happens to be next-closest instead.
   let nearest = null, nearestDist = Infinity;
-  for (const b of bodies) {
+  for (const b of [SUN_BODY, ...bodies]) {
     const worldPos = new THREE.Vector3();
     b.mesh.getWorldPosition(worldPos);
     const d = camera.position.distanceTo(worldPos);
@@ -1086,9 +1101,11 @@ function updateHud(now, dt) {
     document.getElementById('tDiam').textContent = nearest.diameterKm.toLocaleString();
     document.getElementById('tTemp').textContent = `${nearest.tempC}°C`;
     document.getElementById('tMoons').textContent = nearest.moons;
-    document.getElementById('tPeriod').textContent = nearest.periodDays >= 1000
-      ? (nearest.periodDays / 365).toFixed(1) + ' yr'
-      : nearest.periodDays + ' d';
+    document.getElementById('tPeriod').textContent = nearest.periodDays == null
+      ? '—'
+      : nearest.periodDays >= 1000
+        ? (nearest.periodDays / 365).toFixed(1) + ' yr'
+        : nearest.periodDays + ' d';
     const surfaceDist = Math.max(0, nearestDist - nearest.gameRadius);
     const kmPerUnit = nearest.diameterKm / (nearest.gameRadius * 2);
     document.getElementById('tRange').textContent = `${Math.round(surfaceDist * kmPerUnit).toLocaleString()} km`;
