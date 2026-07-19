@@ -1299,12 +1299,13 @@ function getEarthSurfaceDistanceKm() {
 }
 
 function activeEarthScaleLayer(surfaceKm = getEarthSurfaceDistanceKm()) {
-  return EARTH_SCALE_LAYERS.find((layer) => surfaceKm >= layer.minKm && surfaceKm < layer.maxKm) || EARTH_SCALE_LAYERS[0];
+  return EARTH_SCALE_LAYERS.find((layer) => surfaceKm >= layer.minKm && surfaceKm < layer.maxKm)
+    || EARTH_SCALE_LAYERS[EARTH_SCALE_LAYERS.length - 1];
 }
 
 function layerReadinessBadge(sourceKeys) {
   if (!sourceKeys.length) return 'static';
-  const statuses = sourceKeys.map((key) => dataSources[key]?.status).filter(Boolean);
+  const statuses = sourceKeys.map((key) => dataSources[key]?.status).filter((status) => status !== undefined);
   if (statuses.includes('live')) return 'live';
   if (statuses.includes('stale')) return 'stale';
   if (statuses.includes('connecting')) return 'connecting';
