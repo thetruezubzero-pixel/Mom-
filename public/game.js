@@ -519,6 +519,32 @@ function kmToGameUnits(km) {
   return (km * earth.gameRadius) / EARTH_RADIUS_KM;
 }
 
+function greatCircleDistanceKm(a, b) {
+  const toRad = (d) => THREE.MathUtils.degToRad(d);
+  const [lat1, lon1] = a;
+  const [lat2, lon2] = b;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const p1 = toRad(lat1);
+  const p2 = toRad(lat2);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(1 - h, 0)));
+  return EARTH_RADIUS_KM * c;
+}
+
+function routeCycleSeconds(category, distanceKm) {
+  const distT = THREE.MathUtils.clamp(distanceKm / 15000, 0, 1);
+  if (category === 'air') return THREE.MathUtils.lerp(18, 46, distT);
+  if (category === 'sea') return THREE.MathUtils.lerp(42, 110, distT);
+  return THREE.MathUtils.lerp(26, 70, distT); // land
+}
+
+function routeSpeedForCategory(category, a, b) {
+  const distanceKm = greatCircleDistanceKm(a, b);
+  const cycleSeconds = routeCycleSeconds(category, distanceKm);
+  return { speed: 1 / Math.max(1, cycleSeconds), distanceKm };
+}
+
 function latLonToVec3(lat, lon, radius) {
   const phi = THREE.MathUtils.degToRad(90 - lat);
   const theta = THREE.MathUtils.degToRad(lon + 180);
@@ -623,15 +649,15 @@ const SATELLITE_SHELLS = [
 
 const earthOpsLayers = { air: true, sea: true, land: true, sat: true, iot: true };
 let earthOpsClassFilter = 'all';
-const earthOpsRoutes = []; // { category, classTag, points, marker, progress, speed }
+const earthOpsRoutes = []; // { category, classTag, points, marker, line, progress, speed, distanceKm }
 const earthOpsSatellites = []; // { name, marker, ring, angle, angularSpeed, live }
 
-function addRoute(category, classTag, points, color, speed, group) {
+function addRoute(category, classTag, points, color, speed, group, distanceKm = 0) {
   const geo = new THREE.BufferGeometry().setFromPoints(points);
   const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.45 }));
   const marker = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color }));
   group.add(line, marker);
-  earthOpsRoutes.push({ category, classTag, points, marker, line, progress: Math.random(), speed });
+  earthOpsRoutes.push({ category, classTag, points, marker, line, progress: Math.random(), speed, distanceKm });
 }
 
 // Surface layers rotate with Earth's spin (real geography is fixed to the
@@ -643,17 +669,27 @@ const satelliteGroup = new THREE.Group();
 earth.pivot.add(satelliteGroup);
 
 for (const [a, b, cls] of FLIGHT_ROUTES) {
-  addRoute('air', cls, greatCircleArc(EARTH_AIRPORTS[a], EARTH_AIRPORTS[b], 0.06), 0xbfd4ff, 0.05, surfaceGroup);
+  const start = EARTH_AIRPORTS[a];
+  const end = EARTH_AIRPORTS[b];
+  const { speed, distanceKm } = routeSpeedForCategory('air', start, end);
+  addRoute('air', cls, greatCircleArc(start, end, 0.06), 0xbfd4ff, speed, surfaceGroup, distanceKm);
 }
 for (const [a, b, cls] of SHIPPING_LANES) {
-  addRoute('sea', cls, greatCircleArc(EARTH_PORTS[a], EARTH_PORTS[b], 0.006), 0x5fb0d6, 0.012, surfaceGroup);
+  const start = EARTH_PORTS[a];
+  const end = EARTH_PORTS[b];
+  const { speed, distanceKm } = routeSpeedForCategory('sea', start, end);
+  addRoute('sea', cls, greatCircleArc(start, end, 0.006), 0x5fb0d6, speed, surfaceGroup, distanceKm);
 }
 for (const [a, b, cls] of LOGISTICS_CORRIDORS) {
   const cityLatLon = (name) => {
     const c = EARTH_CITIES.find((x) => x[0] === name);
-    return [c[1], c[2]];
+    return c ? [c[1], c[2]] : null;
   };
-  addRoute('land', cls, greatCircleArc(cityLatLon(a), cityLatLon(b), 0.01), 0xe0b04a, 0.02, surfaceGroup);
+  const start = cityLatLon(a);
+  const end = cityLatLon(b);
+  if (!start || !end) continue;
+  const { speed, distanceKm } = routeSpeedForCategory('land', start, end);
+  addRoute('land', cls, greatCircleArc(start, end, 0.01), 0xe0b04a, speed, surfaceGroup, distanceKm);
 }
 
 // City/airport/port reference markers — small static points, real coordinates.
@@ -800,6 +836,7 @@ function renderDataSourceStatus() {
   el.innerHTML = Object.values(dataSources).map((s) => `
     <div class="row"><span>${s.label}</span><b class="badge badge-${badge(s.status).toLowerCase().replace(' ', '-')}">${badge(s.status)}</b></div>
   `).join('');
+  renderEarthOpsMetrics();
 }
 renderDataSourceStatus();
 pollLiveIss();
@@ -807,19 +844,41 @@ pollLiveFlights();
 setInterval(pollLiveIss, 20000);
 setInterval(pollLiveFlights, 30000);
 
+function renderEarthOpsMetrics() {
+  const el = document.getElementById('earthOpsMetrics');
+  if (!el) return;
+  const classMatchedRoutes = earthOpsRoutes.filter((r) => earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag);
+  const visibleRoutes = classMatchedRoutes.filter((r) => earthOpsLayers[r.category]).length;
+  const liveFeeds = Object.values(dataSources).filter((s) => s.status === 'live').length;
+  const avgRouteKm = classMatchedRoutes.length
+    ? Math.round(classMatchedRoutes.reduce((sum, r) => sum + r.distanceKm, 0) / classMatchedRoutes.length)
+    : 0;
+  const visibleSatellites = earthOpsLayers.sat ? earthOpsSatellites.length : 0;
+  const liveSatellites = earthOpsLayers.sat ? earthOpsSatellites.filter((s) => s.live).length : 0;
+  const enabledLayers = Object.values(earthOpsLayers).filter(Boolean).length;
+  el.innerHTML = `
+    <div class="row"><span>Enabled layers</span><b class="mono">${enabledLayers}/5</b></div>
+    <div class="row"><span>Visible routes</span><b class="mono">${visibleRoutes}/${classMatchedRoutes.length}</b></div>
+    <div class="row"><span>Avg route distance</span><b class="mono">${avgRouteKm.toLocaleString()} km</b></div>
+    <div class="row"><span>Satellites</span><b class="mono">${liveSatellites}/${visibleSatellites} live</b></div>
+    <div class="row"><span>Live feeds</span><b class="mono">${liveFeeds}/${Object.keys(dataSources).length}</b></div>
+  `;
+}
+
 function applyEarthOpsFilters() {
   for (const r of earthOpsRoutes) {
     const layerOn = earthOpsLayers[r.category];
     const classOn = earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag;
     const visible = layerOn && classOn;
     r.marker.visible = visible;
-    r.line.visible = layerOn; // corridor paths stay visible per-layer regardless of class filter
+    r.line.visible = visible;
   }
   for (const s of earthOpsSatellites) {
     s.marker.visible = earthOpsLayers.sat;
     s.ring.visible = earthOpsLayers.sat;
   }
   iotGroup.visible = earthOpsLayers.iot;
+  renderEarthOpsMetrics();
 }
 
 // ---------------------------------------------------------------------------
