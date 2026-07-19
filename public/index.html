@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>signal catcher</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <div class="title">signal catcher</div>
+    <div class="hud">
+      <span>score <b id="score">0</b></span>
+      <span>time <b id="time">60</b></span>
+    </div>
+  </header>
+
+  <main>
+    <canvas id="game" width="360" height="560"></canvas>
+    <div id="overlay" class="overlay">
+      <h1>signal catcher</h1>
+      <p>Catch the cyan signals. Avoid the red noise. Drag or use arrow keys.</p>
+      <button id="start">Start</button>
+      <div id="board"></div>
+    </div>
+  </main>
+
+  <script src="/game.js"></script>
+</body>
+</html>

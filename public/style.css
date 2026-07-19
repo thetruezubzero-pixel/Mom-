@@ -1,0 +1,139 @@
+:root {
+  --bg: #0f1416;
+  --surface: #171f22;
+  --ink: #e8ecec;
+  --ink-dim: #8b969b;
+  --line: #2a3336;
+  --signal: #5fd6c8;
+  --noise: #d65f6f;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+header {
+  width: 100%;
+  max-width: 400px;
+  padding: max(14px, env(safe-area-inset-top)) 16px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.title {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.hud {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  color: var(--ink-dim);
+  display: flex;
+  gap: 14px;
+}
+.hud b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+main {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+canvas {
+  background: var(--surface);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  touch-action: none;
+  max-width: 92vw;
+  max-height: 68vh;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+.overlay.hidden { display: none; }
+.overlay h1 {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 22px;
+  margin: 0;
+}
+.overlay p {
+  color: var(--ink-dim);
+  font-size: 14px;
+  max-width: 280px;
+  margin: 0;
+}
+.overlay button {
+  margin-top: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 14px;
+  padding: 10px 24px;
+  border-radius: 999px;
+  border: none;
+  background: var(--signal);
+  color: #05201c;
+}
+.overlay button:active { opacity: 0.85; }
+
+#board {
+  margin-top: 14px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  color: var(--ink-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 260px;
+}
+#board .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+#board .row b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.name-entry {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.name-entry input {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  width: 140px;
+}
+.name-entry button {
+  margin-top: 0;
+  padding: 8px 16px;
+}
