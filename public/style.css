@@ -1,67 +1,239 @@
 :root {
-  --bg: #0f1416;
-  --surface: #171f22;
-  --ink: #e8ecec;
-  --ink-dim: #8b969b;
-  --line: #2a3336;
+  --bg: #05070a;
+  --surface: rgba(10, 16, 20, 0.82);
+  --ink: #d7fff3;
+  --ink-dim: #7fa39c;
+  --line: rgba(95, 214, 200, 0.28);
   --signal: #5fd6c8;
-  --noise: #d65f6f;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
   margin: 0;
   height: 100%;
   background: var(--bg);
   color: var(--ink);
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+}
+
+#scene {
+  position: absolute;
+  inset: 0;
+  display: block;
+  touch-action: none;
+}
+
+.mono { font-variant-numeric: tabular-nums; }
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
-  align-items: center;
-  height: 100dvh;
-  overflow: hidden;
 }
 
-header {
-  width: 100%;
-  max-width: 400px;
-  padding: max(14px, env(safe-area-inset-top)) 16px 10px;
+.hud-box {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+  padding: 8px 10px;
+}
+
+.hud-top {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.hud-top .label { color: var(--ink-dim); display: block; font-size: 9px; letter-spacing: 0.06em; }
+.title-box { flex: 1 1 160px; }
+.title-box .title { color: var(--signal); font-weight: 700; letter-spacing: 0.04em; font-size: 14px; display: block; }
+.title-box .subtitle { color: var(--ink-dim); font-size: 10px; }
+.clock-box { min-width: 78px; }
+.hud-top .mono { font-size: 15px; }
+
+.chip-btn {
+  pointer-events: auto;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--signal);
+  border-color: var(--line);
+  cursor: pointer;
+}
+.chip-btn:active { background: var(--signal); color: #05201c; }
+
+.hud-left, .hud-right {
+  position: absolute;
+  top: 66px;
+  width: 168px;
+  font-size: 11px;
+  pointer-events: auto;
+}
+.hud-left { left: max(10px, env(safe-area-inset-left)); }
+.hud-right { right: max(10px, env(safe-area-inset-right)); }
+
+.panel-title {
+  color: var(--signal);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.hud-left .row, .hud-right .row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-}
-.title {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.hud {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 13px;
+  gap: 6px;
+  padding: 1px 0;
   color: var(--ink-dim);
-  display: flex;
-  gap: 14px;
 }
-.hud b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.hud-left .row b, .hud-right .row b { color: var(--ink); }
 
-main {
-  position: relative;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-}
-
-canvas {
-  background: var(--surface);
-  border-radius: 14px;
+#gyroRadar {
+  display: block;
+  margin: 0 auto 6px;
+  background: rgba(95,214,200,0.06);
+  border-radius: 50%;
   border: 1px solid var(--line);
-  touch-action: none;
-  max-width: 92vw;
-  max-height: 68vh;
+}
+
+.chip {
+  margin-top: 8px;
+  width: 100%;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(95,214,200,0.08);
+  color: var(--ink);
+  pointer-events: auto;
+}
+.chip.active { background: var(--signal); color: #05201c; }
+
+.hud-bottom {
+  position: absolute;
+  left: max(10px, env(safe-area-inset-left));
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  max-height: 26dvh;
+  overflow-y: auto;
+  pointer-events: auto;
+  font-size: 11px;
+}
+
+.travel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.travel-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(95,214,200,0.08);
+  color: var(--ink);
+  pointer-events: auto;
+}
+.travel-btn:active { background: var(--signal); color: #05201c; }
+
+.reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.reticle-ring { fill: none; stroke: rgba(255,255,255,0.25); stroke-width: 2; }
+.reticle-tick { stroke: rgba(255,255,255,0.4); stroke-width: 2; }
+
+.flash {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--signal);
+  text-shadow: 0 0 10px rgba(0,0,0,0.9);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s, transform 0.4s;
+}
+.flash.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+
+.touch-look {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 55%;
+  height: 100%;
+  pointer-events: auto;
+}
+
+.thrust-btn, .boost-btn {
+  position: absolute;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  pointer-events: auto;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+.thrust-btn { left: max(14px, env(safe-area-inset-left)); width: 92px; height: 92px; }
+.boost-btn { left: calc(max(14px, env(safe-area-inset-left)) + 102px); width: 60px; height: 60px; bottom: max(24px, env(safe-area-inset-bottom)); }
+.thrust-btn:active, .boost-btn:active { background: var(--signal); color: #05201c; }
+
+/* Touch controls are keyed off input capability, not screen width — a phone
+   rotated to landscape is often wider than 720px but is still a touchscreen. */
+@media (hover: hover) and (pointer: fine) {
+  .thrust-btn, .boost-btn, .touch-look { display: none; }
+}
+@media (min-width: 720px) {
+  .hud-left, .hud-right { width: 200px; }
+}
+
+/* On touch devices the thrust/boost buttons sit bottom-left; give the
+   full-width quick-travel panel enough clearance so it never overlaps them. */
+@media (hover: none) {
+  .hud-bottom { bottom: 130px; max-height: 22dvh; }
+}
+
+/* Landscape phones: shorter viewport height, so keep side panels compact
+   and out of the way of the thrust/boost buttons and reticle. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .hud-top { font-size: 10px; }
+  .hud-top .mono { font-size: 13px; }
+  .hud-left, .hud-right {
+    top: 50px;
+    max-height: 72dvh;
+    overflow-y: auto;
+    width: 150px;
+  }
+  .hud-bottom { max-height: 34dvh; }
+  .thrust-btn { width: 72px; height: 72px; }
+  .boost-btn { width: 48px; height: 48px; left: calc(max(14px, env(safe-area-inset-left)) + 82px); }
+  .overlay { padding: 14px; gap: 8px; }
+  .overlay h1 { font-size: 20px; }
+  .overlay .lede { font-size: 12px; }
 }
 
 .overlay {
@@ -71,79 +243,161 @@ canvas {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   text-align: center;
-  padding: 20px;
-  background: rgba(15, 20, 22, 0.88);
+  padding: 24px;
+  background: rgba(5, 7, 10, 0.92);
   overflow-y: auto;
 }
 .overlay.hidden { display: none; }
 .overlay h1 {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 22px;
+  font-size: 26px;
   margin: 0;
+  color: var(--signal);
+  letter-spacing: 0.04em;
 }
-.overlay p {
+.overlay .lede {
   color: var(--ink-dim);
-  font-size: 14px;
-  max-width: 280px;
+  font-size: 13px;
+  max-width: 460px;
+  line-height: 1.5;
   margin: 0;
 }
-.overlay button {
-  margin-top: 8px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 14px;
-  padding: 10px 24px;
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  max-width: 560px;
+  font-size: 11px;
+  color: var(--ink-dim);
+  text-align: left;
+}
+.controls-grid div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.controls-grid b { color: var(--ink); }
+
+.overlay button.primary {
+  margin-top: 6px;
+  font-family: inherit;
+  font-size: 15px;
+  padding: 12px 30px;
   border-radius: 999px;
   border: none;
   background: var(--signal);
   color: #05201c;
+  font-weight: 700;
 }
-.overlay button:active { opacity: 0.85; }
-.overlay button:disabled { opacity: 0.5; }
+.overlay button.primary:active { opacity: 0.85; }
 
-.error {
-  color: var(--noise);
-  font-size: 12px;
-  max-width: 260px;
-  margin: 0;
-}
-.error.hidden { display: none; }
+.note { color: var(--ink-dim); font-size: 11px; max-width: 280px; }
 
-#board {
-  margin-top: 14px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 13px;
-  color: var(--ink-dim);
+/* Earth Ops panel + API key modal share this floating-card treatment. */
+.panel-modal {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  max-width: 260px;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(5, 7, 10, 0.7);
+  pointer-events: auto;
+  z-index: 5;
 }
-#board .row {
+.panel-modal.hidden { display: none; }
+.panel-modal-inner {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  max-width: 420px;
+  width: 100%;
+  max-height: 82dvh;
+  overflow-y: auto;
+  text-align: left;
+  font-size: 12px;
+}
+.panel-modal-inner { position: relative; }
+.panel-modal-inner .panel-title { margin-top: 12px; }
+.panel-modal-inner .panel-title:first-child { margin-top: 0; }
+.panel-modal-inner .note { max-width: none; margin: 4px 0 8px; }
+
+.modal-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.05);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--ink-dim);
+}
+.layer-row input { accent-color: var(--signal); }
+
+#earthOpsClassFilter {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.04);
+  color: var(--ink);
+}
+
+#dataSourceStatus .row {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  padding: 3px 0;
+  color: var(--ink-dim);
 }
-#board .row b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.badge {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.badge-live { background: rgba(95,214,200,0.2); color: var(--signal); }
+.badge-simulated { background: rgba(255,255,255,0.1); color: var(--ink-dim); }
+.badge-needs-key { background: rgba(224,176,74,0.18); color: #e0b04a; }
+.badge-connecting { background: rgba(255,255,255,0.08); color: var(--ink-dim); }
 
-.name-entry {
+.key-row {
   display: flex;
-  gap: 6px;
-  margin-top: 10px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+  color: var(--ink-dim);
+  font-size: 11px;
 }
-.name-entry input {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 14px;
-  padding: 8px 12px;
+.key-row input {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: rgba(255,255,255,0.04);
   color: var(--ink);
-  width: 140px;
 }
-.name-entry button {
-  margin-top: 0;
-  padding: 8px 16px;
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }
+.modal-actions .chip { margin-top: 0; }

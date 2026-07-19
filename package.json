@@ -1,14 +1,15 @@
 {
-  "name": "signal-catcher",
-  "version": "0.1.0",
-  "description": "A small full-stack arcade game sandbox: canvas frontend, Express backend, custom middleware.",
+  "name": "solar-explorer",
+  "version": "0.2.0",
+  "description": "A 3D solar system flight sim: Three.js frontend with real orbital mechanics and a scan-mission leaderboard, Express backend.",
   "main": "server/index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node server/index.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "three": "^0.169.0"
   },
   "license": "MIT"
 }
