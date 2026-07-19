@@ -74,7 +74,7 @@ body {
   border-color: var(--line);
   cursor: pointer;
 }
-.chip-btn:active { background: var(--signal); color: #05201c; }
+.chip-btn:active, .chip-btn.active { background: var(--signal); color: #05201c; }
 
 .hud-left, .hud-right {
   position: absolute;

@@ -548,41 +548,25 @@ function greatCircleDistanceKm(a, b) {
 // without letting a few ultra-long routes dominate the whole speed scale.
 const MAX_ROUTE_DISTANCE_KM = 15000;
 
-// Per-category calibration:
-// pace -> multiplies route cycle duration (higher = slower),
-// visibility -> contributes to weighted route prominence in metrics/animation,
-// baseOpacity -> baseline path visibility in Earth Ops,
-// markerScale -> baseline moving marker size for that route category.
+// Per-category/class pacing calibration — pure animation tuning (how long a
+// marker takes to cross a route of a given real distance), not a claim about
+// real-world shipment timing. baseOpacity/markerScale are fixed cosmetic
+// values per category so the three route types stay visually distinct.
 const ROUTE_CATEGORY_WEIGHT = {
-  air: { pace: 0.95, visibility: 1.14, baseOpacity: 0.5, markerScale: 1.12 },
-  sea: { pace: 1.35, visibility: 0.84, baseOpacity: 0.4, markerScale: 0.92 },
-  land: { pace: 1.12, visibility: 0.94, baseOpacity: 0.44, markerScale: 1.0 },
+  air: { pace: 0.95, baseOpacity: 0.5, markerScale: 1.12 },
+  sea: { pace: 1.35, baseOpacity: 0.4, markerScale: 0.92 },
+  land: { pace: 1.12, baseOpacity: 0.44, markerScale: 1.0 },
+};
+const ROUTE_CLASS_PACE = {
+  passenger: 0.92, consumer: 1.0, energy: 1.18, food: 1.06, industrial: 1.12,
 };
 
-const ROUTE_CLASS_WEIGHT = {
-  passenger: { pace: 0.92, visibility: 1.08 },
-  consumer: { pace: 1.0, visibility: 1.0 },
-  energy: { pace: 1.18, visibility: 0.86 },
-  food: { pace: 1.06, visibility: 0.95 },
-  industrial: { pace: 1.12, visibility: 0.9 },
-};
-
-const ROUTE_SOURCE_BY_CATEGORY = { air: 'flights', sea: 'maritime', land: 'freight' };
 const ROUTE_CYCLE_RANGE_SECONDS = {
   air: [18, 46], // commercial flight corridors
   sea: [42, 110], // maritime freight lanes
   land: [26, 70], // regional freight corridors
 };
-const ROUTE_OPACITY_CLAMP = [0.2, 0.9];
 const ROUTE_MARKER_BASE_RADIUS = 0.18;
-const ROUTE_MARKER_SCALE_CLAMP = [0.72, 1.3];
-const REALISM_FEED_WEIGHT = 0.58;
-const REALISM_ROUTE_WEIGHT = 0.42;
-const ROUTE_PULSE_BASE = 0.82;
-const ROUTE_PULSE_AMPLITUDE = 0.3;
-const ROUTE_PULSE_FREQUENCY = 0.0012;
-const ROUTE_TEMPO_CLAMP = [0.7, 1.35];
-const DEFAULT_ROUTE_WEIGHT = 1;
 const SOURCE_AGE_SECOND_CUTOFF = 120;
 // If a source has been "connecting" for >1.6 polling windows, treat it as
 // effectively unavailable and switch to simulation until a live fix returns
@@ -592,30 +576,20 @@ const CONNECTION_TIMEOUT_MULTIPLIER = 1.6;
 function routeCycleSeconds(category, classTag, distanceKm) {
   const distT = THREE.MathUtils.clamp(distanceKm / MAX_ROUTE_DISTANCE_KM, 0, 1);
   const categoryProfile = ROUTE_CATEGORY_WEIGHT[category] || ROUTE_CATEGORY_WEIGHT.land;
-  const classProfile = ROUTE_CLASS_WEIGHT[classTag] || ROUTE_CLASS_WEIGHT.consumer;
+  const classPace = ROUTE_CLASS_PACE[classTag] ?? ROUTE_CLASS_PACE.consumer;
   const [minS, maxS] = ROUTE_CYCLE_RANGE_SECONDS[category] || ROUTE_CYCLE_RANGE_SECONDS.land;
-  return THREE.MathUtils.lerp(minS, maxS, distT) * categoryProfile.pace * classProfile.pace;
+  return THREE.MathUtils.lerp(minS, maxS, distT) * categoryProfile.pace * classPace;
 }
 
 function routeSpeedForCategory(category, classTag, a, b) {
   const distanceKm = greatCircleDistanceKm(a, b);
   const cycleSeconds = routeCycleSeconds(category, classTag, distanceKm);
   const categoryProfile = ROUTE_CATEGORY_WEIGHT[category] || ROUTE_CATEGORY_WEIGHT.land;
-  const classProfile = ROUTE_CLASS_WEIGHT[classTag] || ROUTE_CLASS_WEIGHT.consumer;
-  const routeWeight = categoryProfile.visibility * classProfile.visibility;
-  // Use the same weighting driver for opacity so pacing and visual prominence
-  // stay synchronized for each category/class lane.
-  const baseOpacity = THREE.MathUtils.clamp(
-    categoryProfile.baseOpacity * classProfile.visibility,
-    ROUTE_OPACITY_CLAMP[0],
-    ROUTE_OPACITY_CLAMP[1],
-  );
   return {
     speed: 1 / cycleSeconds,
     distanceKm,
-    routeWeight,
-    baseOpacity,
-    markerScale: categoryProfile.markerScale * classProfile.visibility,
+    baseOpacity: categoryProfile.baseOpacity,
+    markerScale: categoryProfile.markerScale,
   };
 }
 
@@ -732,42 +706,19 @@ const SATELLITE_SHELLS = [
 
 const earthOpsLayers = { air: true, sea: true, land: true, sat: true, iot: true };
 let earthOpsClassFilter = 'all';
-const earthOpsRoutes = []; // { category, classTag, points, marker, line, progress, speed, distanceKm, routeWeight, baseOpacity, markerScale, pulsePhase, sourceKey }
+const earthOpsRoutes = []; // { category, classTag, points, marker, line, progress, speed, distanceKm }
 const earthOpsSatellites = []; // { name, marker, ring, angle, angularSpeed, live }
 
-function addRoute(category, classTag, points, color, speed, group, distanceKm = 0, routeWeight = 1, baseOpacity = 0.45, markerScale = 1) {
+function addRoute(category, classTag, points, color, speed, group, distanceKm = 0, baseOpacity = 0.45, markerScale = 1) {
   const geo = new THREE.BufferGeometry().setFromPoints(points);
-  const line = new THREE.Line(
-    geo,
-    new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity: THREE.MathUtils.clamp(baseOpacity, ROUTE_OPACITY_CLAMP[0], ROUTE_OPACITY_CLAMP[1]),
-    }),
-  );
-  const markerRadius = ROUTE_MARKER_BASE_RADIUS
-    * THREE.MathUtils.clamp(markerScale, ROUTE_MARKER_SCALE_CLAMP[0], ROUTE_MARKER_SCALE_CLAMP[1]);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: baseOpacity }));
+  // 0.18 base radius keeps markers readable near Earth without obscuring route paths.
   const marker = new THREE.Mesh(
-    // 0.18 base radius keeps markers readable near Earth without obscuring route paths.
-    new THREE.SphereGeometry(markerRadius, 8, 6),
+    new THREE.SphereGeometry(ROUTE_MARKER_BASE_RADIUS * markerScale, 8, 6),
     new THREE.MeshBasicMaterial({ color }),
   );
   group.add(line, marker);
-  earthOpsRoutes.push({
-    category,
-    classTag,
-    points,
-    marker,
-    line,
-    progress: Math.random(),
-    speed,
-    distanceKm,
-    routeWeight,
-    baseOpacity,
-    markerScale,
-    pulsePhase: Math.random() * Math.PI * 2,
-    sourceKey: ROUTE_SOURCE_BY_CATEGORY[category] || null,
-  });
+  earthOpsRoutes.push({ category, classTag, points, marker, line, progress: Math.random(), speed, distanceKm });
 }
 
 // Surface layers rotate with Earth's spin (real geography is fixed to the
@@ -781,14 +732,14 @@ earth.pivot.add(satelliteGroup);
 for (const [a, b, cls] of FLIGHT_ROUTES) {
   const start = EARTH_AIRPORTS[a];
   const end = EARTH_AIRPORTS[b];
-  const { speed, distanceKm, routeWeight, baseOpacity, markerScale } = routeSpeedForCategory('air', cls, start, end);
-  addRoute('air', cls, greatCircleArc(start, end, 0.06), 0xbfd4ff, speed, surfaceGroup, distanceKm, routeWeight, baseOpacity, markerScale);
+  const { speed, distanceKm, baseOpacity, markerScale } = routeSpeedForCategory('air', cls, start, end);
+  addRoute('air', cls, greatCircleArc(start, end, 0.06), 0xbfd4ff, speed, surfaceGroup, distanceKm, baseOpacity, markerScale);
 }
 for (const [a, b, cls] of SHIPPING_LANES) {
   const start = EARTH_PORTS[a];
   const end = EARTH_PORTS[b];
-  const { speed, distanceKm, routeWeight, baseOpacity, markerScale } = routeSpeedForCategory('sea', cls, start, end);
-  addRoute('sea', cls, greatCircleArc(start, end, 0.006), 0x5fb0d6, speed, surfaceGroup, distanceKm, routeWeight, baseOpacity, markerScale);
+  const { speed, distanceKm, baseOpacity, markerScale } = routeSpeedForCategory('sea', cls, start, end);
+  addRoute('sea', cls, greatCircleArc(start, end, 0.006), 0x5fb0d6, speed, surfaceGroup, distanceKm, baseOpacity, markerScale);
 }
 for (const [a, b, cls] of LOGISTICS_CORRIDORS) {
   const cityLatLon = (name) => {
@@ -807,8 +758,8 @@ for (const [a, b, cls] of LOGISTICS_CORRIDORS) {
   const start = cityLatLon(a);
   const end = cityLatLon(b);
   if (!start || !end) continue;
-  const { speed, distanceKm, routeWeight, baseOpacity, markerScale } = routeSpeedForCategory('land', cls, start, end);
-  addRoute('land', cls, greatCircleArc(start, end, 0.01), 0xe0b04a, speed, surfaceGroup, distanceKm, routeWeight, baseOpacity, markerScale);
+  const { speed, distanceKm, baseOpacity, markerScale } = routeSpeedForCategory('land', cls, start, end);
+  addRoute('land', cls, greatCircleArc(start, end, 0.01), 0xe0b04a, speed, surfaceGroup, distanceKm, baseOpacity, markerScale);
 }
 
 // City/airport/port reference markers — small static points, real coordinates.
@@ -932,14 +883,6 @@ function sourceAgeMs(source) {
   return source.lastSuccessAt ? Math.max(0, Date.now() - source.lastSuccessAt) : null;
 }
 
-function sourceStatusRank(source) {
-  if (source.status === 'live') return 1;
-  if (source.status === 'stale') return 0.55;
-  if (source.status === 'connecting') return 0.35;
-  if (source.status === 'needs_key') return 0.2;
-  return 0.08;
-}
-
 function fallbackStatusFromAge(source) {
   const age = sourceAgeMs(source);
   return age != null && age <= source.staleMs ? 'stale' : 'simulated';
@@ -1058,40 +1001,17 @@ setInterval(pollLiveIss, 20000);
 setInterval(pollLiveFlights, 30000);
 setInterval(refreshSourceHealth, 10000);
 
+// Plain, countable facts only — no synthesized "coverage %" or composite
+// score. If a number here can't be traced to something you could count by
+// hand, it doesn't belong in this panel.
 function renderEarthOpsMetrics() {
   const el = document.getElementById('earthOpsMetrics');
   if (!el) return;
   const classMatchedRoutes = earthOpsRoutes.filter((r) => earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag);
+  const visibleRoutes = classMatchedRoutes.filter((r) => earthOpsLayers[r.category]).length;
+  const distances = classMatchedRoutes.map((r) => r.distanceKm).filter(Number.isFinite);
+  const avgRouteKm = distances.length ? Math.round(distances.reduce((sum, km) => sum + km, 0) / distances.length) : 0;
   const liveFeeds = Object.values(dataSources).filter((s) => s.status === 'live').length;
-  const rollup = classMatchedRoutes.reduce((acc, r) => {
-    const routeWeight = r.routeWeight || DEFAULT_ROUTE_WEIGHT;
-    if (earthOpsLayers[r.category]) {
-      acc.visibleRoutes += 1;
-      acc.weightedVisible += routeWeight;
-    }
-    acc.weightedAll += routeWeight;
-    if (Number.isFinite(r.distanceKm)) {
-      acc.validDistanceCount += 1;
-      acc.distanceSum += r.distanceKm;
-    }
-    return acc;
-  }, {
-    visibleRoutes: 0,
-    weightedVisible: 0,
-    weightedAll: 0,
-    validDistanceCount: 0,
-    distanceSum: 0,
-  });
-  const avgRouteKm = rollup.validDistanceCount ? Math.round(rollup.distanceSum / rollup.validDistanceCount) : 0;
-  const { visibleRoutes, weightedVisible, weightedAll } = rollup;
-  const routeModelCoverage = weightedAll > 0 ? Math.round((weightedVisible / weightedAll) * 100) : 0;
-  const feedHealth = Object.values(dataSources).reduce((sum, s) => sum + sourceStatusRank(s), 0) / Object.keys(dataSources).length;
-  const meanRouteWeight = classMatchedRoutes.length ? weightedAll / classMatchedRoutes.length : 0;
-  const normalizedRouteDepth = Math.min(1, meanRouteWeight);
-  const routeDepth = classMatchedRoutes.length ? normalizedRouteDepth : 0;
-  // REALISM_FEED_WEIGHT / REALISM_ROUTE_WEIGHT keeps telemetry quality as the
-  // primary realism signal while preserving meaningful route-model influence.
-  const realismScore = Math.round((feedHealth * REALISM_FEED_WEIGHT + routeDepth * REALISM_ROUTE_WEIGHT) * 100);
   const issAge = sourceAgeMs(dataSources.iss);
   const issAgeLabel = issAge == null ? 'n/a' : `${Math.round(issAge / 1000)}s`;
   const visibleSatellites = earthOpsLayers.sat ? earthOpsSatellites.length : 0;
@@ -1100,13 +1020,10 @@ function renderEarthOpsMetrics() {
   el.innerHTML = `
     <div class="row"><span>Enabled layers</span><b class="mono">${enabledLayers}/5</b></div>
     <div class="row"><span>Visible routes</span><b class="mono">${visibleRoutes}/${classMatchedRoutes.length}</b></div>
-    <div class="row"><span>Weighted route coverage</span><b class="mono">${routeModelCoverage}%</b></div>
     <div class="row"><span>Avg route distance</span><b class="mono">${avgRouteKm.toLocaleString()} km</b></div>
-    <div class="row"><span>Route model load</span><b class="mono">${weightedVisible.toFixed(1)}</b></div>
-    <div class="row"><span>Satellites</span><b class="mono">${liveSatellites}/${visibleSatellites} live</b></div>
+    <div class="row"><span>Satellites live</span><b class="mono">${liveSatellites}/${visibleSatellites}</b></div>
     <div class="row"><span>ISS telemetry age</span><b class="mono">${issAgeLabel}</b></div>
     <div class="row"><span>Live feeds</span><b class="mono">${liveFeeds}/${Object.keys(dataSources).length}</b></div>
-    <div class="row"><span>Realism index</span><b class="mono">${realismScore}/100</b></div>
   `;
 }
 
@@ -1257,9 +1174,62 @@ motionToggle.addEventListener('click', () => {
 // ---------------------------------------------------------------------------
 let roaming = false;
 
+// Earth Lock: holds the camera at a fixed distance from Earth's actual
+// current position every frame, so real orbital motion can't carry Earth out
+// of view the way it does with a free-flight camera left stationary (Earth's
+// own orbital speed is fast enough that this happens within seconds). Thrust
+// zooms in/out instead of flying freely while locked.
+const EARTH_LOCK_DISTANCE_MULTIPLIER = 3.5; // matches the normal travelTo approach distance
+const earthLockState = {
+  active: false,
+  distance: earth.gameRadius * EARTH_LOCK_DISTANCE_MULTIPLIER,
+  minDistance: earth.gameRadius * 1.35,
+  maxDistance: earth.gameRadius * 18,
+};
+
 const overlay = document.getElementById('overlay');
 const flashEl = document.getElementById('flash');
 const travelListEl = document.getElementById('travelList');
+const earthLockToggle = document.getElementById('earthLockToggle');
+
+function getEarthWorldPosition(target = new THREE.Vector3()) {
+  earth.mesh.getWorldPosition(target);
+  return target;
+}
+
+function syncEarthLockButton() {
+  earthLockToggle.textContent = earthLockState.active ? 'UNLOCK EARTH' : 'LOCK EARTH';
+  earthLockToggle.classList.toggle('active', earthLockState.active);
+}
+
+function syncEarthLockCamera() {
+  const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+  const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
+  const earthPos = getEarthWorldPosition();
+  camera.position.copy(earthPos).addScaledVector(forwardVec, -earthLockState.distance);
+  camera.lookAt(earthPos);
+}
+
+function setEarthLock(active, { warpFirst = false, silent = false } = {}) {
+  if (active) {
+    if (warpFirst) travelTo('Earth', { suppressFlash: true, preserveEarthLock: true });
+    const currentDistance = camera.position.distanceTo(getEarthWorldPosition());
+    earthLockState.distance = THREE.MathUtils.clamp(
+      currentDistance > 0 ? currentDistance : earth.gameRadius * EARTH_LOCK_DISTANCE_MULTIPLIER,
+      earthLockState.minDistance,
+      earthLockState.maxDistance,
+    );
+    earthLockState.active = true;
+    velocity.set(0, 0, 0);
+    syncEarthLockCamera();
+    if (!silent) flash('EARTH LOCK ON — THRUST TO ZOOM');
+  } else {
+    earthLockState.active = false;
+    velocity.set(0, 0, 0);
+    if (!silent) flash('EARTH LOCK OFF');
+  }
+  syncEarthLockButton();
+}
 
 function flash(msg) {
   flashEl.textContent = msg;
@@ -1280,7 +1250,8 @@ renderTravelList();
 // Places the ship a comfortable distance from the target, on its sunlit side,
 // looking straight at it — the camera is a real THREE.Camera so lookAt()
 // orients correctly (a plain Object3D would orient the opposite way).
-function travelTo(name) {
+function travelTo(name, { suppressFlash = false, preserveEarthLock = false } = {}) {
+  if (name !== 'Earth' && earthLockState.active && !preserveEarthLock) setEarthLock(false, { silent: true });
   let p, radius;
   if (name === 'Sun') {
     p = new THREE.Vector3(0, 0, 0);
@@ -1307,19 +1278,33 @@ function travelTo(name) {
   yaw = e.y;
   pitch = e.x;
   velocity.set(0, 0, 0);
-  flash(`WARPED TO ${name.toUpperCase()}`);
+  if (name === 'Earth' && earthLockState.active) {
+    earthLockState.distance = THREE.MathUtils.clamp(
+      camera.position.distanceTo(getEarthWorldPosition()),
+      earthLockState.minDistance,
+      earthLockState.maxDistance,
+    );
+    syncEarthLockCamera();
+  }
+  if (!suppressFlash) flash(`WARPED TO ${name.toUpperCase()}`);
 }
 
 function enterFreeRoam() {
+  setEarthLock(false, { silent: true });
   velocity.set(0, 0, 0);
   yaw = -Math.PI / 2;
   pitch = -0.05;
   camera.position.set(sceneDistance(startAU), 6, 0);
   overlay.classList.add('hidden');
   roaming = true;
+  syncEarthLockButton();
 }
 
 document.getElementById('start').addEventListener('click', enterFreeRoam);
+earthLockToggle.addEventListener('click', () => {
+  setEarthLock(!earthLockState.active, { warpFirst: !earthLockState.active });
+});
+syncEarthLockButton();
 
 // ---------------------------------------------------------------------------
 // Earth Ops panel wiring — layer toggles, class filter, API key modal.
@@ -1388,7 +1373,9 @@ function updateHud(now, dt) {
   document.getElementById('pitchVal').textContent = pitchDeg.toFixed(1) + '°';
   document.getElementById('rollVal').textContent = rollDeg.toFixed(1) + '°';
   document.getElementById('yawVal').textContent = ((yawDeg + 360) % 360).toFixed(1) + '°';
-  document.getElementById('speedVal').textContent = velocity.length().toFixed(0) + ' u/s';
+  document.getElementById('speedVal').textContent = earthLockState.active
+    ? `LOCK ${earthLockState.distance.toFixed(1)}u`
+    : velocity.length().toFixed(0) + ' u/s';
   drawGyroRadar(pitchDeg, rollDeg);
 
   // nearest body — pure telemetry, no objective attached to it. Includes the
@@ -1416,16 +1403,7 @@ function updateHud(now, dt) {
     const kmPerUnit = nearest.diameterKm / (nearest.gameRadius * 2);
     document.getElementById('tRange').textContent = `${Math.round(surfaceDist * kmPerUnit).toLocaleString()} km`;
   }
-}
-
-function routeSourceFactor(sourceKey) {
-  if (!sourceKey || !dataSources[sourceKey]) return 0.92;
-  const status = dataSources[sourceKey].status;
-  if (status === 'live') return 1.16;
-  if (status === 'stale') return 1.0;
-  if (status === 'connecting') return 0.94;
-  if (status === 'needs_key') return 0.9;
-  return 0.85;
+  document.getElementById('tLock').textContent = earthLockState.active ? 'EARTH' : 'OFF';
 }
 
 // ---------------------------------------------------------------------------
@@ -1459,18 +1437,11 @@ function frame(ts) {
   updateAsteroidMatrices();
 
   for (const r of earthOpsRoutes) {
-    const sourceFactor = routeSourceFactor(r.sourceKey);
-    const routeTempo = sourceFactor * THREE.MathUtils.clamp(r.routeWeight || DEFAULT_ROUTE_WEIGHT, ROUTE_TEMPO_CLAMP[0], ROUTE_TEMPO_CLAMP[1]);
-    r.progress = (r.progress + r.speed * routeTempo * dt) % 1;
+    // Speed is purely a function of real great-circle distance (set once in
+    // routeSpeedForCategory) — nothing here ties a route's motion or
+    // brightness to an unrelated API's live/simulated status.
+    r.progress = (r.progress + r.speed * dt) % 1;
     r.marker.position.copy(samplePolyline(r.points, r.progress));
-    // Gentle pulse keeps high-confidence/live corridors visually legible while
-    // avoiding strobe-like flicker during close camera passes.
-    const pulse = ROUTE_PULSE_BASE + Math.abs(Math.sin(ts * ROUTE_PULSE_FREQUENCY + r.pulsePhase)) * ROUTE_PULSE_AMPLITUDE;
-    const weightedOpacity = THREE.MathUtils.clamp((r.baseOpacity || 0.4) * pulse * sourceFactor, 0.14, 0.95);
-    r.line.material.opacity = weightedOpacity;
-    r.marker.material.opacity = THREE.MathUtils.clamp(0.65 + weightedOpacity * 0.3, 0.5, 1);
-    r.marker.material.transparent = true;
-    r.marker.scale.setScalar(THREE.MathUtils.clamp((r.markerScale || 1) * (0.84 + sourceFactor * 0.2), 0.7, 1.5));
   }
   for (const s of earthOpsSatellites) {
     if (s.live) continue; // live-positioned marker (e.g. real ISS fix) holds until the next poll
@@ -1487,33 +1458,50 @@ function frame(ts) {
     const dir = input.forward !== 0 ? Math.sign(input.forward) : (touchThrust ? 1 : 0);
     const boosting = input.boost || touchBoost;
 
-    const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
-    camera.quaternion.copy(camQuat);
+    if (earthLockState.active) {
+      // Thrust/brake zoom the fixed orbit distance in/out instead of flying
+      // freely — the camera re-anchors to Earth's actual position every
+      // frame, so its real orbital motion can never carry it out of view.
+      const zoomDir = dir - (input.brake ? 1 : 0);
+      if (zoomDir !== 0) {
+        const zoomRate = ACCEL * 0.5 * (boosting ? BOOST_MULT : 1);
+        earthLockState.distance = THREE.MathUtils.clamp(
+          earthLockState.distance - zoomDir * zoomRate * dt,
+          earthLockState.minDistance,
+          earthLockState.maxDistance,
+        );
+      }
+      velocity.set(0, 0, 0);
+      syncEarthLockCamera();
+    } else {
+      const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+      camera.quaternion.copy(camQuat);
 
-    const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
-    const rightVec = new THREE.Vector3(1, 0, 0).applyQuaternion(camQuat);
+      const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
+      const rightVec = new THREE.Vector3(1, 0, 0).applyQuaternion(camQuat);
 
-    if (dir !== 0) velocity.addScaledVector(forwardVec, ACCEL * dir * (boosting ? BOOST_MULT : 1) * dt);
-    if (input.strafe) velocity.addScaledVector(rightVec, ACCEL * dt * input.strafe);
+      if (dir !== 0) velocity.addScaledVector(forwardVec, ACCEL * dir * (boosting ? BOOST_MULT : 1) * dt);
+      if (input.strafe) velocity.addScaledVector(rightVec, ACCEL * dt * input.strafe);
 
-    if (input.brake) velocity.multiplyScalar(Math.max(0, 1 - 3 * dt));
+      if (input.brake) velocity.multiplyScalar(Math.max(0, 1 - 3 * dt));
 
-    const maxSpd = MAX_SPEED * (boosting ? BOOST_MULT : 1);
-    if (velocity.length() > maxSpd) velocity.setLength(maxSpd);
-    velocity.multiplyScalar(Math.max(0, 1 - DRAG * dt));
+      const maxSpd = MAX_SPEED * (boosting ? BOOST_MULT : 1);
+      if (velocity.length() > maxSpd) velocity.setLength(maxSpd);
+      velocity.multiplyScalar(Math.max(0, 1 - DRAG * dt));
 
-    camera.position.addScaledVector(velocity, dt);
+      camera.position.addScaledVector(velocity, dt);
 
-    // Keep a sane distance from the sun's core — slide tangentially rather
-    // than killing all momentum, so the ship glides past instead of sticking.
-    const distFromSun = camera.position.length();
-    if (distFromSun < SUN_RADIUS + 4) {
-      const normal = distFromSun > 0.001
-        ? camera.position.clone().normalize()
-        : new THREE.Vector3(1, 0, 0);
-      camera.position.copy(normal.clone().multiplyScalar(SUN_RADIUS + 4));
-      const radialSpeed = velocity.dot(normal);
-      if (radialSpeed < 0) velocity.addScaledVector(normal, -radialSpeed);
+      // Keep a sane distance from the sun's core — slide tangentially rather
+      // than killing all momentum, so the ship glides past instead of sticking.
+      const distFromSun = camera.position.length();
+      if (distFromSun < SUN_RADIUS + 4) {
+        const normal = distFromSun > 0.001
+          ? camera.position.clone().normalize()
+          : new THREE.Vector3(1, 0, 0);
+        camera.position.copy(normal.clone().multiplyScalar(SUN_RADIUS + 4));
+        const radialSpeed = velocity.dot(normal);
+        if (radialSpeed < 0) velocity.addScaledVector(normal, -radialSpeed);
+      }
     }
 
     updateHud(ts, dt);
