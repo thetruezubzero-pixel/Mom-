@@ -524,21 +524,21 @@ scene.add(asteroidMesh);
 const earth = bodies.find((b) => b.name === 'Earth');
 const EARTH_RADIUS_KM = 6371;
 const EARTH_MU = 398600; // km^3/s^2, real Earth gravitational parameter
+const toRad = (degrees) => THREE.MathUtils.degToRad(degrees);
 
 function kmToGameUnits(km) {
   return (km * earth.gameRadius) / EARTH_RADIUS_KM;
 }
 
 function greatCircleDistanceKm(a, b) {
-  const toRad = (degrees) => THREE.MathUtils.degToRad(degrees);
   const [lat1, lon1] = a;
   const [lat2, lon2] = b;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const lat1Rad = toRad(lat1);
   const lat2Rad = toRad(lat2);
-  const haversine = Math.sin(dLat / 2) ** 2 + Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) ** 2;
-  const h = THREE.MathUtils.clamp(haversine, 0, 1);
+  const haversineA = Math.sin(dLat / 2) ** 2 + Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) ** 2;
+  const h = THREE.MathUtils.clamp(haversineA, 0, 1);
   const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   return EARTH_RADIUS_KM * c;
 }
@@ -548,6 +548,11 @@ function greatCircleDistanceKm(a, b) {
 // without letting a few ultra-long routes dominate the whole speed scale.
 const MAX_ROUTE_DISTANCE_KM = 15000;
 
+// Per-category calibration:
+// pace -> multiplies route cycle duration (higher = slower),
+// visibility -> contributes to weighted route prominence in metrics/animation,
+// baseOpacity -> baseline path visibility in Earth Ops,
+// markerScale -> baseline moving marker size for that route category.
 const ROUTE_CATEGORY_WEIGHT = {
   air: { pace: 0.95, visibility: 1.14, baseOpacity: 0.5, markerScale: 1.12 },
   sea: { pace: 1.35, visibility: 0.84, baseOpacity: 0.4, markerScale: 0.92 },
@@ -563,14 +568,33 @@ const ROUTE_CLASS_WEIGHT = {
 };
 
 const ROUTE_SOURCE_BY_CATEGORY = { air: 'flights', sea: 'maritime', land: 'freight' };
+const ROUTE_CYCLE_RANGE_SECONDS = {
+  air: [18, 46], // commercial flight corridors
+  sea: [42, 110], // maritime freight lanes
+  land: [26, 70], // regional freight corridors
+};
+const ROUTE_OPACITY_CLAMP = [0.2, 0.9];
+const ROUTE_MARKER_BASE_RADIUS = 0.18;
+const ROUTE_MARKER_SCALE_CLAMP = [0.72, 1.3];
+const REALISM_FEED_WEIGHT = 0.58;
+const REALISM_ROUTE_WEIGHT = 0.42;
+const ROUTE_PULSE_BASE = 0.82;
+const ROUTE_PULSE_AMPLITUDE = 0.3;
+const ROUTE_PULSE_FREQUENCY = 0.0012;
+const ROUTE_TEMPO_CLAMP = [0.7, 1.35];
+const DEFAULT_ROUTE_WEIGHT = 1;
+const SOURCE_AGE_SECOND_CUTOFF = 120;
+// If a source has been "connecting" for >1.6 polling windows, treat it as
+// effectively unavailable and switch to simulation until a live fix returns
+// (roughly one missed poll plus 60% of the next window).
+const CONNECTION_TIMEOUT_MULTIPLIER = 1.6;
 
 function routeCycleSeconds(category, classTag, distanceKm) {
   const distT = THREE.MathUtils.clamp(distanceKm / MAX_ROUTE_DISTANCE_KM, 0, 1);
   const categoryProfile = ROUTE_CATEGORY_WEIGHT[category] || ROUTE_CATEGORY_WEIGHT.land;
   const classProfile = ROUTE_CLASS_WEIGHT[classTag] || ROUTE_CLASS_WEIGHT.consumer;
-  if (category === 'air') return THREE.MathUtils.lerp(18, 46, distT) * categoryProfile.pace * classProfile.pace;
-  if (category === 'sea') return THREE.MathUtils.lerp(42, 110, distT) * categoryProfile.pace * classProfile.pace;
-  return THREE.MathUtils.lerp(26, 70, distT) * categoryProfile.pace * classProfile.pace; // land
+  const [minS, maxS] = ROUTE_CYCLE_RANGE_SECONDS[category] || ROUTE_CYCLE_RANGE_SECONDS.land;
+  return THREE.MathUtils.lerp(minS, maxS, distT) * categoryProfile.pace * classProfile.pace;
 }
 
 function routeSpeedForCategory(category, classTag, a, b) {
@@ -579,7 +603,13 @@ function routeSpeedForCategory(category, classTag, a, b) {
   const categoryProfile = ROUTE_CATEGORY_WEIGHT[category] || ROUTE_CATEGORY_WEIGHT.land;
   const classProfile = ROUTE_CLASS_WEIGHT[classTag] || ROUTE_CLASS_WEIGHT.consumer;
   const routeWeight = categoryProfile.visibility * classProfile.visibility;
-  const baseOpacity = THREE.MathUtils.clamp(categoryProfile.baseOpacity * classProfile.visibility, 0.2, 0.9);
+  // Use the same weighting driver for opacity so pacing and visual prominence
+  // stay synchronized for each category/class lane.
+  const baseOpacity = THREE.MathUtils.clamp(
+    categoryProfile.baseOpacity * classProfile.visibility,
+    ROUTE_OPACITY_CLAMP[0],
+    ROUTE_OPACITY_CLAMP[1],
+  );
   return {
     speed: 1 / cycleSeconds,
     distanceKm,
@@ -597,6 +627,15 @@ function latLonToVec3(lat, lon, radius) {
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta),
   );
+}
+
+function validateCoordinates(lat, lon) {
+  const safeLat = Number(lat);
+  const safeLon = Number(lon);
+  if (!Number.isFinite(safeLat) || !Number.isFinite(safeLon)) return null;
+  if (safeLat < -90 || safeLat > 90) return null;
+  if (safeLon < -180 || safeLon > 180) return null;
+  return [safeLat, safeLon];
 }
 
 function greatCircleArc(a, b, altPeak, segments = 40) {
@@ -700,10 +739,17 @@ function addRoute(category, classTag, points, color, speed, group, distanceKm = 
   const geo = new THREE.BufferGeometry().setFromPoints(points);
   const line = new THREE.Line(
     geo,
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: THREE.MathUtils.clamp(baseOpacity, 0.2, 0.9) }),
+    new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: THREE.MathUtils.clamp(baseOpacity, ROUTE_OPACITY_CLAMP[0], ROUTE_OPACITY_CLAMP[1]),
+    }),
   );
+  const markerRadius = ROUTE_MARKER_BASE_RADIUS
+    * THREE.MathUtils.clamp(markerScale, ROUTE_MARKER_SCALE_CLAMP[0], ROUTE_MARKER_SCALE_CLAMP[1]);
   const marker = new THREE.Mesh(
-    new THREE.SphereGeometry(0.18 * THREE.MathUtils.clamp(markerScale, 0.72, 1.3), 8, 6),
+    // 0.18 base radius keeps markers readable near Earth without obscuring route paths.
+    new THREE.SphereGeometry(markerRadius, 8, 6),
     new THREE.MeshBasicMaterial({ color }),
   );
   group.add(line, marker);
@@ -747,11 +793,16 @@ for (const [a, b, cls] of SHIPPING_LANES) {
 for (const [a, b, cls] of LOGISTICS_CORRIDORS) {
   const cityLatLon = (name) => {
     const c = EARTH_CITIES.find((x) => x[0] === name);
-    if (!c) return null;
-    const lat = Number(c[1]);
-    const lon = Number(c[2]);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-    return [lat, lon];
+    if (!c) {
+      console.warn(`Earth Ops: missing city coordinates for "${name}"`);
+      return null;
+    }
+    const coords = validateCoordinates(c[1], c[2]);
+    if (!coords) {
+      console.warn(`Earth Ops: invalid city coordinates for "${name}"`);
+      return null;
+    }
+    return coords;
   };
   const start = cityLatLon(a);
   const end = cityLatLon(b);
@@ -889,6 +940,11 @@ function sourceStatusRank(source) {
   return 0.08;
 }
 
+function fallbackStatusFromAge(source) {
+  const age = sourceAgeMs(source);
+  return age != null && age <= source.staleMs ? 'stale' : 'simulated';
+}
+
 function markSourceAttempt(key) {
   const source = dataSources[key];
   if (!source) return;
@@ -911,8 +967,7 @@ function markSourceFallback(key, errorLabel = 'fallback') {
   if (!source) return;
   source.failures += 1;
   source.lastError = errorLabel;
-  const age = sourceAgeMs(source);
-  source.status = age != null && age <= source.staleMs ? 'stale' : 'simulated';
+  source.status = fallbackStatusFromAge(source);
 }
 
 function refreshSourceHealth() {
@@ -925,7 +980,7 @@ function refreshSourceHealth() {
       changed = true;
     } else if (source.status === 'connecting' && source.lastAttemptAt) {
       const waitingMs = Date.now() - source.lastAttemptAt;
-      if (waitingMs > source.pollMs * 1.6) {
+      if (waitingMs > source.pollMs * CONNECTION_TIMEOUT_MULTIPLIER) {
         source.status = 'simulated';
         changed = true;
       }
@@ -937,8 +992,10 @@ function refreshSourceHealth() {
 async function pollLiveIss() {
   markSourceAttempt('iss');
   try {
-    const { lat, lon } = await dataSources.iss.fetchLive();
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('bad-coordinates');
+    const result = await dataSources.iss.fetchLive();
+    const coords = validateCoordinates(result?.lat, result?.lon);
+    if (!coords) throw new Error('bad-coordinates');
+    const [lat, lon] = coords;
     const sat = earthOpsSatellites.find((s) => s.name === 'ISS');
     if (sat) {
       const p = latLonToVec3(lat, lon, sat.ringRadius);
@@ -984,7 +1041,7 @@ function renderDataSourceStatus() {
     const age = sourceAgeMs(source);
     if (age == null) return source.status === 'connecting' ? 'awaiting first fix' : 'no live fix yet';
     const sec = Math.round(age / 1000);
-    return sec < 120 ? `${sec}s ago` : `${Math.round(sec / 60)}m ago`;
+    return sec < SOURCE_AGE_SECOND_CUTOFF ? `${sec}s ago` : `${Math.round(sec / 60)}m ago`;
   };
   el.innerHTML = Object.values(dataSources).map((s) => `
     <div class="row">
@@ -999,26 +1056,42 @@ pollLiveIss();
 pollLiveFlights();
 setInterval(pollLiveIss, 20000);
 setInterval(pollLiveFlights, 30000);
-setInterval(refreshSourceHealth, 5000);
+setInterval(refreshSourceHealth, 10000);
 
 function renderEarthOpsMetrics() {
   const el = document.getElementById('earthOpsMetrics');
   if (!el) return;
   const classMatchedRoutes = earthOpsRoutes.filter((r) => earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag);
-  const visibleRoutes = classMatchedRoutes.filter((r) => earthOpsLayers[r.category]).length;
   const liveFeeds = Object.values(dataSources).filter((s) => s.status === 'live').length;
-  const validDistanceRoutes = classMatchedRoutes.filter((r) => Number.isFinite(r.distanceKm) && r.distanceKm >= 0);
-  const avgRouteKm = validDistanceRoutes.length
-    ? Math.round(validDistanceRoutes.reduce((sum, r) => sum + r.distanceKm, 0) / validDistanceRoutes.length)
-    : 0;
-  const weightedVisible = classMatchedRoutes
-    .filter((r) => earthOpsLayers[r.category])
-    .reduce((sum, r) => sum + (r.routeWeight || 1), 0);
-  const weightedAll = classMatchedRoutes.reduce((sum, r) => sum + (r.routeWeight || 1), 0);
+  const rollup = classMatchedRoutes.reduce((acc, r) => {
+    const routeWeight = r.routeWeight || DEFAULT_ROUTE_WEIGHT;
+    if (earthOpsLayers[r.category]) {
+      acc.visibleRoutes += 1;
+      acc.weightedVisible += routeWeight;
+    }
+    acc.weightedAll += routeWeight;
+    if (Number.isFinite(r.distanceKm)) {
+      acc.validDistanceCount += 1;
+      acc.distanceSum += r.distanceKm;
+    }
+    return acc;
+  }, {
+    visibleRoutes: 0,
+    weightedVisible: 0,
+    weightedAll: 0,
+    validDistanceCount: 0,
+    distanceSum: 0,
+  });
+  const avgRouteKm = rollup.validDistanceCount ? Math.round(rollup.distanceSum / rollup.validDistanceCount) : 0;
+  const { visibleRoutes, weightedVisible, weightedAll } = rollup;
   const routeModelCoverage = weightedAll > 0 ? Math.round((weightedVisible / weightedAll) * 100) : 0;
   const feedHealth = Object.values(dataSources).reduce((sum, s) => sum + sourceStatusRank(s), 0) / Object.keys(dataSources).length;
-  const routeDepth = classMatchedRoutes.length ? Math.min(1, weightedAll / Math.max(1, classMatchedRoutes.length)) : 0;
-  const realismScore = Math.round((feedHealth * 0.58 + routeDepth * 0.42) * 100);
+  const meanRouteWeight = classMatchedRoutes.length ? weightedAll / classMatchedRoutes.length : 0;
+  const normalizedRouteDepth = Math.min(1, meanRouteWeight);
+  const routeDepth = classMatchedRoutes.length ? normalizedRouteDepth : 0;
+  // REALISM_FEED_WEIGHT / REALISM_ROUTE_WEIGHT keeps telemetry quality as the
+  // primary realism signal while preserving meaningful route-model influence.
+  const realismScore = Math.round((feedHealth * REALISM_FEED_WEIGHT + routeDepth * REALISM_ROUTE_WEIGHT) * 100);
   const issAge = sourceAgeMs(dataSources.iss);
   const issAgeLabel = issAge == null ? 'n/a' : `${Math.round(issAge / 1000)}s`;
   const visibleSatellites = earthOpsLayers.sat ? earthOpsSatellites.length : 0;
@@ -1043,13 +1116,9 @@ function applyEarthOpsFilters() {
     const classOn = earthOpsClassFilter === 'all' || earthOpsClassFilter === r.classTag;
     const visible = layerOn && classOn;
     // Keep route paths and moving markers aligned to the same active filter so
-    // the panel class filter behaves consistently in the full Earth Ops view.
+    // both visuals follow layer + class filtering consistently.
     r.marker.visible = visible;
     r.line.visible = visible;
-    if (visible) {
-      r.line.material.opacity = THREE.MathUtils.clamp(r.baseOpacity, 0.18, 0.95);
-      r.marker.scale.setScalar(THREE.MathUtils.clamp(r.markerScale, 0.72, 1.3));
-    }
   }
   for (const s of earthOpsSatellites) {
     s.marker.visible = earthOpsLayers.sat;
@@ -1391,10 +1460,12 @@ function frame(ts) {
 
   for (const r of earthOpsRoutes) {
     const sourceFactor = routeSourceFactor(r.sourceKey);
-    const routeTempo = sourceFactor * THREE.MathUtils.clamp(r.routeWeight || 1, 0.7, 1.35);
+    const routeTempo = sourceFactor * THREE.MathUtils.clamp(r.routeWeight || DEFAULT_ROUTE_WEIGHT, ROUTE_TEMPO_CLAMP[0], ROUTE_TEMPO_CLAMP[1]);
     r.progress = (r.progress + r.speed * routeTempo * dt) % 1;
     r.marker.position.copy(samplePolyline(r.points, r.progress));
-    const pulse = 0.82 + Math.abs(Math.sin(ts * 0.0012 + r.pulsePhase)) * 0.3;
+    // Gentle pulse keeps high-confidence/live corridors visually legible while
+    // avoiding strobe-like flicker during close camera passes.
+    const pulse = ROUTE_PULSE_BASE + Math.abs(Math.sin(ts * ROUTE_PULSE_FREQUENCY + r.pulsePhase)) * ROUTE_PULSE_AMPLITUDE;
     const weightedOpacity = THREE.MathUtils.clamp((r.baseOpacity || 0.4) * pulse * sourceFactor, 0.14, 0.95);
     r.line.material.opacity = weightedOpacity;
     r.marker.material.opacity = THREE.MathUtils.clamp(0.65 + weightedOpacity * 0.3, 0.5, 1);
