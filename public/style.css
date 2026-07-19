@@ -74,7 +74,8 @@ canvas {
   gap: 10px;
   text-align: center;
   padding: 20px;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  background: rgba(15, 20, 22, 0.88);
+  overflow-y: auto;
 }
 .overlay.hidden { display: none; }
 .overlay h1 {
@@ -99,6 +100,15 @@ canvas {
   color: #05201c;
 }
 .overlay button:active { opacity: 0.85; }
+.overlay button:disabled { opacity: 0.5; }
+
+.error {
+  color: var(--noise);
+  font-size: 12px;
+  max-width: 260px;
+  margin: 0;
+}
+.error.hidden { display: none; }
 
 #board {
   margin-top: 14px;

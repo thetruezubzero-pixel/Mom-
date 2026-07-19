@@ -4,8 +4,6 @@
   const scoreEl = document.getElementById('score');
   const timeEl = document.getElementById('time');
   const overlay = document.getElementById('overlay');
-  const startBtn = document.getElementById('start');
-  const board = document.getElementById('board');
 
   const W = canvas.width;
   const H = canvas.height;
@@ -55,6 +53,7 @@
   const keys = new Set();
   window.addEventListener('keydown', (e) => keys.add(e.key));
   window.addEventListener('keyup', (e) => keys.delete(e.key));
+  window.addEventListener('blur', () => keys.clear());
 
   function update(dt) {
     if (keys.has('ArrowLeft')) paddle.x = Math.max(0, paddle.x - 260 * dt);
@@ -144,7 +143,9 @@
         <input id="name" maxlength="16" placeholder="your name" autocomplete="off" />
         <button id="submit">Submit</button>
       </div>
+      <p id="submit-error" class="error hidden"></p>
       <div id="board"></div>
+      <button id="start">Play again</button>
     `;
 
     document.getElementById('submit').addEventListener('click', submitScore);
@@ -157,18 +158,31 @@
 
   async function submitScore() {
     const nameInput = document.getElementById('name');
+    const submitBtn = document.getElementById('submit');
+    const errorEl = document.getElementById('submit-error');
     const name = (nameInput.value || 'anon').trim() || 'anon';
 
-    const res = await fetch('/api/score', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, score }),
-    });
+    errorEl.classList.add('hidden');
+    submitBtn.disabled = true;
 
-    if (res.ok) {
+    try {
+      const res = await fetch('/api/score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, score }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `request failed (${res.status})`);
+      }
+
       nameInput.disabled = true;
-      document.getElementById('submit').disabled = true;
       await renderLeaderboard();
+    } catch (err) {
+      submitBtn.disabled = false;
+      errorEl.textContent = `Couldn't save score: ${err.message}. Try again.`;
+      errorEl.classList.remove('hidden');
     }
   }
 
@@ -193,6 +207,8 @@
     }[c]));
   }
 
-  startBtn.addEventListener('click', startRound);
+  overlay.addEventListener('click', (e) => {
+    if (e.target.id === 'start') startRound();
+  });
   renderLeaderboard();
 })();

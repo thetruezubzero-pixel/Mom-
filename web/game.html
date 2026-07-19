@@ -108,6 +108,14 @@
   .overlay button:active { opacity: 0.85; }
   .overlay button:disabled { opacity: 0.5; }
 
+  .error {
+    color: var(--noise);
+    font-size: 12px;
+    max-width: 260px;
+    margin: 0;
+  }
+  .error.hidden { display: none; }
+
   #board {
     margin-top: 14px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -179,7 +187,6 @@
     const scoreEl = document.getElementById('score');
     const timeEl = document.getElementById('time');
     const overlay = document.getElementById('overlay');
-    const startBtn = document.getElementById('start');
 
     const W = canvas.width;
     const H = canvas.height;
@@ -209,8 +216,12 @@
       scores.push({ name: name.slice(0, 16), score: value, at: Date.now() });
       scores.sort((a, b) => b.score - a.score);
       scores.length = Math.min(scores.length, 50);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
-      return scores;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
+        return { scores, saved: true };
+      } catch {
+        return { scores, saved: false };
+      }
     }
 
     function resetState() {
@@ -248,6 +259,7 @@
     const keys = new Set();
     window.addEventListener('keydown', (e) => keys.add(e.key));
     window.addEventListener('keyup', (e) => keys.delete(e.key));
+    window.addEventListener('blur', () => keys.clear());
 
     function update(dt) {
       if (keys.has('ArrowLeft')) paddle.x = Math.max(0, paddle.x - 260 * dt);
@@ -335,8 +347,10 @@
           <input id="name" maxlength="16" placeholder="your name" autocomplete="off" />
           <button id="submit">Save</button>
         </div>
+        <p id="submit-error" class="error hidden"></p>
         <div id="board"></div>
         <p class="note">Saved to this device only.</p>
+        <button id="start">Play again</button>
       `;
 
       document.getElementById('submit').addEventListener('click', submitScore);
@@ -349,11 +363,20 @@
 
     function submitScore() {
       const nameInput = document.getElementById('name');
+      const submitBtn = document.getElementById('submit');
+      const errorEl = document.getElementById('submit-error');
       const name = (nameInput.value || 'anon').trim() || 'anon';
 
-      saveScore(name, score);
+      const { saved } = saveScore(name, score);
+
+      if (!saved) {
+        errorEl.textContent = "Couldn't save — this browser is blocking local storage (common in private browsing).";
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
       nameInput.disabled = true;
-      document.getElementById('submit').disabled = true;
+      submitBtn.disabled = true;
       renderLeaderboard();
     }
 
@@ -373,7 +396,9 @@
       }[c]));
     }
 
-    startBtn.addEventListener('click', startRound);
+    overlay.addEventListener('click', (e) => {
+      if (e.target.id === 'start') startRound();
+    });
     renderLeaderboard();
   })();
 </script>
