@@ -17,4 +17,14 @@ app.use('/vendor/three.module.js', express.static(path.join(__dirname, '..', 'no
 
 app.listen(PORT, () => {
   console.log(`solar-explorer listening on http://localhost:${PORT}`);
+  // Announce to the federation hub if FEDERATION_HUB_URL is set (no-op
+  // otherwise; fails soft so hub downtime never affects the game server).
+  federation
+    .announce()
+    .then((r) => {
+      if (r.enabled) {
+        console.log('federation: announced to hub', r);
+      }
+    })
+    .catch(() => {});
 });
