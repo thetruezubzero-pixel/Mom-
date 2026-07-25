@@ -1,0 +1,30 @@
+{
+  "federation_version": "1.0",
+  "service_id": "solar-explorer",
+  "display_name": "Solar Explorer -- 3D Flight Sim",
+  "kind": "service",
+  "language": "node",
+  "base_url": "http://localhost:3000",
+  "health_path": "/federation/health",
+  "audit_path": "/federation/audit",
+  "allowed_origins": [],
+  "allow_credentials": true,
+  "capabilities": [
+    {
+      "name": "solar.leaderboard",
+      "method": "GET",
+      "path": "/federation/leaderboard",
+      "description": "Scan-mission leaderboard snapshot.",
+      "equivalence": "game-state",
+      "auth_required": false
+    },
+    {
+      "name": "solar.telemetry",
+      "method": "POST",
+      "path": "/federation/telemetry",
+      "description": "Record a flight/scan telemetry event to the audit chain.",
+      "equivalence": "game-state",
+      "auth_required": false
+    }
+  ]
+}
