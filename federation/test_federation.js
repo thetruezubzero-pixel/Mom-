@@ -18,12 +18,13 @@ const os = require('os');
 const path = require('path');
 
 const protocol = require('./protocol');
+const hubClient = require('./hub_client');
 
-let passed = 0;
+// Tests register here and run sequentially at the end, so async tests are
+// awaited (some hub-client tests are async).
+const _tests = [];
 function test(name, fn) {
-  fn();
-  passed += 1;
-  console.log('ok  ' + name);
+  _tests.push({ name, fn });
 }
 
 function tmpLedger(service) {
@@ -109,4 +110,62 @@ test('ledger persists across reopen', () => {
   assert.strictEqual(reopened.length, 1);
 });
 
-console.log('\n' + passed + ' passed');
+// --- outbound hub client -------------------------------------------------
+test('hub client is a no-op when FEDERATION_HUB_URL is unset', async () => {
+  delete process.env.FEDERATION_HUB_URL;
+  assert.strictEqual(hubClient.enabled(), false);
+  let called = false;
+  const fetchImpl = async () => {
+    called = true;
+    return { ok: true };
+  };
+  const ok = await hubClient.register({ service_id: 'solar-explorer' }, { fetchImpl });
+  assert.strictEqual(ok, false);
+  assert.strictEqual(called, false); // never touched the network
+});
+
+test('register and emit hit the expected hub endpoints', async () => {
+  process.env.FEDERATION_HUB_URL = 'http://hub.local';
+  const seen = [];
+  const fetchImpl = async (url, opts) => {
+    seen.push({ url, body: JSON.parse(opts.body) });
+    return { ok: true };
+  };
+  assert.strictEqual(
+    await hubClient.register({ service_id: 'solar-explorer' }, { fetchImpl }),
+    true
+  );
+  assert.strictEqual(
+    await hubClient.emit('service.solar-explorer', 't', { n: 1 }, 'solar-explorer', {
+      fetchImpl,
+    }),
+    true
+  );
+  assert.ok(seen[0].url.endsWith('/federation/register'));
+  assert.ok(seen[1].url.includes('/federation/bus/publish'));
+  assert.ok(seen[1].url.includes('source=solar-explorer'));
+  delete process.env.FEDERATION_HUB_URL;
+});
+
+test('announce no-ops when the hub is not configured', async () => {
+  delete process.env.FEDERATION_HUB_URL;
+  const adapter = require('./adapter');
+  const result = await adapter.announce();
+  assert.deepStrictEqual(result, { enabled: false });
+});
+
+(async () => {
+  let passed = 0;
+  for (const { name, fn } of _tests) {
+    try {
+      await fn();
+    } catch (e) {
+      console.error('FAIL ' + name);
+      console.error(e);
+      process.exit(1);
+    }
+    passed += 1;
+    console.log('ok  ' + name);
+  }
+  console.log('\n' + passed + ' passed');
+})();

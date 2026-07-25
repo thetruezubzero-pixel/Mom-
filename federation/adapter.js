@@ -14,6 +14,7 @@ const path = require('path');
 const express = require('express');
 
 const protocol = require('./protocol');
+const hubClient = require('./hub_client');
 
 const SERVICE_ID = 'solar-explorer';
 
@@ -54,9 +55,35 @@ function buildManifest(baseUrl) {
   };
 }
 
-/** Append a federation audit event. */
+/** Append a federation audit event, and forward it to the hub if configured. */
 function record(action, payload, actor) {
-  return ledger.append(action, payload || {}, actor);
+  const rec = ledger.append(action, payload || {}, actor);
+  if (hubClient.enabled()) {
+    // Fire-and-forget: never block the request or crash on hub downtime.
+    hubClient
+      .emit(`service.${SERVICE_ID}`, action, payload || {}, SERVICE_ID)
+      .catch(() => {});
+  }
+  return rec;
+}
+
+/**
+ * Register with the hub and emit a 'service.online' event, if configured.
+ * Called on server startup. No-ops (returns {enabled:false}) unless
+ * FEDERATION_HUB_URL is set, so default runs are unaffected.
+ */
+async function announce() {
+  if (!hubClient.enabled()) {
+    return { enabled: false };
+  }
+  const registered = await hubClient.register(buildManifest());
+  const emitted = await hubClient.emit(
+    `service.${SERVICE_ID}`,
+    'service.online',
+    { service_id: SERVICE_ID },
+    SERVICE_ID
+  );
+  return { enabled: true, registered, emitted };
 }
 
 const router = express.Router();
@@ -111,4 +138,4 @@ router.post('/federation/telemetry', (req, res) => {
   res.json({ recorded: true, seq: rec.seq });
 });
 
-module.exports = { router, ledger, record, buildManifest, SERVICE_ID };
+module.exports = { router, ledger, record, buildManifest, announce, SERVICE_ID };
