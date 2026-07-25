@@ -1,1 +1,4 @@
 node_modules/
+
+# Federation runtime state (tamper-evident audit ledger, regenerated at runtime)
+.federation_ledger.json
